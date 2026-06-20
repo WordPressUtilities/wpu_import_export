@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.1.0
+Version: 0.2.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.1.0';
+    private $plugin_version = '0.2.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -29,19 +29,19 @@ class WPUImportExport {
     private $basetoolbox;
     private $messages = false;
     private $adminpages;
+    private $import_details = array();
     private $plugin_description;
-    private $post_data = array(
-        'post_title' => '',
-        'post_content' => '',
-        'post_excerpt' => ''
-    );
+    private $post_data = array();
     private $post_types = array();
     public function __construct() {
         add_action('init', array(&$this, 'load_translation'));
         add_action('init', array(&$this, 'load_toolbox'));
         add_action('init', array(&$this, 'load_messages'));
         add_action('init', array(&$this, 'load_adminpage'));
-        add_action('init', array(&$this, 'init'));
+        add_action('init', array(&$this, 'init'), 20);
+
+        /* Compatibility with WPU ACF Flexible */
+        add_filter('wpu_import_export_post_types', array(&$this, 'wpu_acf_flexible__post_types'), 20, 1);
     }
 
     /* ----------------------------------------------------------
@@ -124,6 +124,7 @@ class WPUImportExport {
     ---------------------------------------------------------- */
 
     public function init() {
+        $this->build_default_post_data();
         $post_types = apply_filters('wpu_import_export_post_types', array());
         foreach ($post_types as $post_type => $post_type_data) {
             $post_type_data = $this->clean_post_type_data($post_type, $post_type_data);
@@ -132,6 +133,45 @@ class WPUImportExport {
             }
             $this->post_types[$post_type] = $post_type_data;
         }
+    }
+
+    public function build_default_post_data() {
+        $post_data = array(
+            'post_title' => array(
+                'validate_value' => function ($value) {
+                    if (!is_string($value)) {
+                        return '';
+                    }
+                    return sanitize_text_field($value);
+                },
+                'get_value' => function ($post) {
+                    return $post->post_title;
+                }
+            ),
+            'post_content' => array(
+                'get_value' => function ($post) {
+                    return $post->post_content;
+                },
+                'validate_value' => function ($value) {
+                    if (!is_string($value)) {
+                        return '';
+                    }
+                    return wp_kses_post($value);
+                }
+            ),
+            'post_excerpt' => array(
+                'get_value' => function ($post) {
+                    return $post->post_excerpt;
+                },
+                'validate_value' => function ($value) {
+                    if (!is_string($value)) {
+                        return '';
+                    }
+                    return wp_kses_post($value);
+                }
+            )
+        );
+        $this->post_data = apply_filters('wpu_import_export_post_data', $post_data);
     }
 
     public function clean_post_type_data($post_type, $post_type_data) {
@@ -166,12 +206,67 @@ class WPUImportExport {
             if (!isset($column_data['type'])) {
                 $post_type_data['columns'][$column_name]['type'] = 'post_meta';
             }
+            if ($post_type_data['columns'][$column_name]['type'] == 'post_meta') {
+                $post_type_data['columns'][$column_name]['meta_key'] = isset($column_data['meta_key']) ? $column_data['meta_key'] : $column_name;
+            }
             if (!in_array($post_type_data['columns'][$column_name]['type'], $default_types)) {
                 unset($post_type_data['columns'][$column_name]);
             }
         }
 
         return $post_type_data;
+    }
+
+    public function wpu_acf_flexible__post_types($post_types) {
+        $flexible_groups = apply_filters('wpu_import_export_wpu_acf_flexible_groups', array());
+
+        foreach ($flexible_groups as $group_conf) {
+            /* Valid group definition */
+            if (!isset($group_conf['post_type'], $group_conf['flexible_key'], $group_conf['group'])) {
+                continue;
+            }
+
+            /* Post type is tracked */
+            if (!isset($post_types[$group_conf['post_type']]['columns'])) {
+                continue;
+            }
+            $columns = $this->wpu_import_export_get_flexible_columns($group_conf['flexible_key'], $group_conf['group']);
+            $post_types[$group_conf['post_type']]['columns'] = array_merge($post_types[$group_conf['post_type']]['columns'], $columns);
+        }
+
+        return $post_types;
+    }
+
+    public function wpu_import_export_get_flexible_columns($flexible_key, $group) {
+        $flexible_content = apply_filters('wpu_acf_flexible_content', array());
+        if (!is_array($flexible_content) || !isset($flexible_content[$flexible_key]['fields'][$group]['sub_fields'])) {
+            return array();
+        }
+
+        return $this->wpu_import_export_collect_flexible_columns($flexible_content[$flexible_key]['fields'][$group]['sub_fields'], $group, $group);
+    }
+
+    public function wpu_import_export_collect_flexible_columns($fields, $prefix, $group) {
+        $columns = array();
+        foreach ($fields as $key => $field) {
+            $meta_key = $prefix . '_' . $key;
+            if (isset($field['has_wpu_import_export']) && $field['has_wpu_import_export']) {
+                $column = $field['has_wpu_import_export'];
+                if (!is_array($column)) {
+                    $column = array(
+                        'meta_key' => $meta_key,
+                        'type' => 'post_meta'
+                    );
+                }
+                $column_key = substr($meta_key, strlen($group) + 1);
+                $columns[$column_key] = $column;
+            }
+            if (isset($field['sub_fields']) && is_array($field['sub_fields'])) {
+                $columns = array_merge($columns, $this->wpu_import_export_collect_flexible_columns($field['sub_fields'], $meta_key, $group));
+            }
+        }
+
+        return $columns;
     }
 
     /* ----------------------------------------------------------
@@ -191,7 +286,8 @@ class WPUImportExport {
             }
 
             echo '<h2>' . esc_html($post_type_object->label) . '</h2>';
-            submit_button(__('Export', 'wpu_import_export'), 'primary', 'export_' . $post_type, false);
+            submit_button(__('Export', 'wpu_import_export'), 'primary', 'export_' . $post_type);
+            echo '<hr />';
         }
     }
 
@@ -200,7 +296,6 @@ class WPUImportExport {
             if (isset($_POST['export_' . $post_type])) {
                 $this->export_post_type($post_type, $post_type_data);
             }
-
         }
     }
 
@@ -220,17 +315,13 @@ class WPUImportExport {
         $lines = array();
         $lines[$post_type_data['unique_key']] = $this->get_post_unique_key($post->ID, $post_type_data['unique_key']);
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
-            if ($column_data['type'] == 'post_title') {
-                $lines[$column_name] = trim($post->post_title);
-            }
-            if ($column_data['type'] == 'post_content') {
-                $lines[$column_name] = trim($post->post_content);
-            }
-            if ($column_data['type'] == 'post_excerpt') {
-                $lines[$column_name] = trim($post->post_excerpt);
+            foreach ($this->post_data as $post_data_key => $post_data_value) {
+                if ($column_data['type'] == $post_data_key) {
+                    $lines[$column_name] = call_user_func($post_data_value['get_value'], $post);
+                }
             }
             if ($column_data['type'] == 'post_meta') {
-                $lines[$column_name] = get_post_meta($post->ID, $column_name, true);
+                $lines[$column_name] = get_post_meta($post->ID, $column_data['meta_key'], true);
             }
         }
         return $lines;
@@ -267,16 +358,23 @@ class WPUImportExport {
             echo '<p>';
             echo '<label for="file_' . esc_attr($post_type) . '">' . __('CSV File', 'wpu_import_export') . '</label><br />';
             echo '<input id="file_' . esc_attr($post_type) . '" type="file" name="file_' . esc_attr($post_type) . '" />';
-            echo '<input type="hidden" name="upload_post_type" value="' . esc_attr($post_type) . '" />';
             echo '</p>';
-            submit_button(__('Upload File', 'wpu_import_export'), 'primary', 'upload_' . esc_attr($post_type), false);
+            submit_button(__('Upload File', 'wpu_import_export'), 'primary', 'upload_' . esc_attr($post_type));
+            echo '<hr />';
         }
 
     }
 
     public function page_action__import() {
 
-        $post_type = isset($_POST['upload_post_type']) ? sanitize_key(wp_unslash($_POST['upload_post_type'])) : '';
+        $post_type = '';
+        foreach ($this->post_types as $post_type_key => $post_type_data) {
+            if (isset($_POST['upload_' . $post_type_key])) {
+                $post_type = $post_type_key;
+                break;
+            }
+        }
+
         $file_key = 'file_' . $post_type;
 
         /* Check posted infos */
@@ -300,14 +398,43 @@ class WPUImportExport {
 
         /* Parse file content */
         $lines = $this->basetoolbox->csv_to_array($file_content);
-        $number_of_lines = 0;
-        foreach ($lines as $line) {
-            $post_id = $this->create_or_update_post($post_type, $line);
-            if ($post_id) {
-                $number_of_lines++;
-            }
+        $nb_lines = count($lines);
+        if (!$lines || $nb_lines < 1) {
+            $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
+            return;
         }
-        $this->set_message('import_success', __('Import successful', 'wpu_import_export') . ' (' . $number_of_lines . ' ' . __('posts imported', 'wpu_import_export') . ')', 'updated');
+        $this->import_details = array(
+            'new' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'error' => 0
+        );
+
+        foreach ($lines as $i => $line) {
+            $this->create_or_update_post($post_type, $line);
+        }
+
+        $message_type = 'error';
+        $details_text = array(
+            sprintf(__('Lines processed: %d', 'wpu_import_export'), count($lines))
+        );
+        if ($this->import_details['new']) {
+            $message_type = 'updated';
+            $details_text[] = sprintf(_n('1 new post created', '%d new posts created', $this->import_details['new'], 'wpu_import_export'), $this->import_details['new']);
+        }
+        if ($this->import_details['updated']) {
+            $message_type = 'updated';
+            $details_text[] = sprintf(_n('1 post updated', '%d posts updated', $this->import_details['updated'], 'wpu_import_export'), $this->import_details['updated']);
+        }
+        if ($this->import_details['skipped']) {
+            $details_text[] = sprintf(_n('1 post skipped', '%d posts skipped', $this->import_details['skipped'], 'wpu_import_export'), $this->import_details['skipped']);
+        }
+        if ($this->import_details['error']) {
+            $details_text[] = sprintf(_n('1 error', '%d errors', $this->import_details['error'], 'wpu_import_export'), $this->import_details['error']);
+        }
+        $details_text = implode('<br /> - ', $details_text);
+
+        $this->set_message('import_success', $details_text, $message_type);
 
     }
 
@@ -325,32 +452,45 @@ class WPUImportExport {
         $unique_key = $post_type_data['unique_key'];
         if (!$unique_key) {
             $this->set_message('missing_unique_key', __('Missing unique key', 'wpu_import_export'), 'error');
+            $this->import_details['skipped']++;
             return;
         }
         $unique_key_value = isset($line[$unique_key]) ? $line[$unique_key] : null;
         if (!$unique_key_value) {
             $this->set_message('missing_unique_key_value', __('Missing unique key value', 'wpu_import_export'), 'error');
+            $this->import_details['skipped']++;
             return;
         }
         $post_id = $this->get_post_by_key($post_type, $unique_key, $unique_key_value);
 
-        $post_metas = array();
+        $post_metas = array(
+            $unique_key => $unique_key_value
+        );
         $post_data = array(
             'post_type' => $post_type
         );
 
         /* Add post data */
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
+
             if (!isset($line[$column_name])) {
                 continue;
             }
+
+            $new_value = $line[$column_name];
+
+            /* Load from post data */
             foreach ($this->post_data as $post_data_key => $post_data_value) {
-                if ($column_data['type'] == $post_data_key) {
-                    $post_data[$post_data_key] = $line[$column_name];
+                if ($column_data['type'] != $post_data_key) {
+                    continue;
                 }
+                if (isset($post_data_value['validate_value'])) {
+                    $new_value = call_user_func($post_data_value['validate_value'], $new_value);
+                }
+                $post_data[$post_data_key] = $new_value;
             }
             if ($column_data['type'] == 'post_meta') {
-                $post_metas[$column_name] = $line[$column_name];
+                $post_metas[$column_data['meta_key']] = $new_value;
             }
         }
 
@@ -359,12 +499,15 @@ class WPUImportExport {
             $post_data['post_status'] = 'draft';
             $post_id = wp_insert_post($post_data);
             if (!$post_id) {
+                $this->import_details['error']++;
                 return false;
             }
+            $this->import_details['new']++;
 
         } else {
             $post_data['ID'] = $post_id;
             wp_update_post($post_data);
+            $this->import_details['updated']++;
         }
 
         foreach ($post_metas as $meta_key => $meta_value) {
@@ -378,11 +521,18 @@ class WPUImportExport {
     public function get_post_by_key($post_type, $key, $value) {
         $post = get_posts(array(
             'post_type' => $post_type,
-            'meta_key' => $key,
-            'meta_value' => $value,
+            'meta_query' => array(
+                array(
+                    'key' => $key,
+                    'value' => $value,
+                    'compare' => '='
+                )
+            ),
             'fields' => 'ids',
+            'post_status' => array('publish', 'draft', 'pending', 'future', 'private'),
             'numberposts' => 1
         ));
+
         return $post ? $post[0] : null;
     }
 
