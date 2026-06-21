@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.2.0
+Version: 0.3.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.2.0';
+    private $plugin_version = '0.3.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -39,6 +39,11 @@ class WPUImportExport {
         add_action('init', array(&$this, 'load_messages'));
         add_action('init', array(&$this, 'load_adminpage'));
         add_action('init', array(&$this, 'init'), 20);
+
+        /* Admin assets */
+        add_action('admin_enqueue_scripts', array(&$this,
+            'admin_assets'
+        ));
 
         /* Compatibility with WPU ACF Flexible */
         add_filter('wpu_import_export_post_types', array(&$this, 'wpu_acf_flexible__post_types'), 20, 1);
@@ -117,6 +122,14 @@ class WPUImportExport {
             require_once __DIR__ . '/inc/WPUBaseMessages/WPUBaseMessages.php';
             $this->messages = new \wpu_import_export\WPUBaseMessages($this->plugin_settings['id']);
         }
+    }
+
+    /* ----------------------------------------------------------
+      Assets
+    ---------------------------------------------------------- */
+
+    public function admin_assets($hook) {
+        wp_enqueue_style('wpu-import-export-style', plugins_url('assets/style.css', __FILE__), array(), $this->plugin_version);
     }
 
     /* ----------------------------------------------------------
@@ -286,9 +299,60 @@ class WPUImportExport {
             }
 
             echo '<h2>' . esc_html($post_type_object->label) . '</h2>';
+            $this->display_export_filters($post_type);
             submit_button(__('Export', 'wpu_import_export'), 'primary', 'export_' . $post_type);
             echo '<hr />';
         }
+    }
+
+    /* Display taxonomy & status filters for a post type */
+    public function display_export_filters($post_type) {
+
+        echo '<details class="wpu-import-export-filters">';
+        echo '<summary>' . esc_html__('Filters', 'wpu_import_export') . '</summary>';
+
+        /* Taxonomies attached to the post type with a UI */
+        $taxonomies = get_object_taxonomies($post_type, 'objects');
+        foreach ($taxonomies as $taxonomy) {
+            if (!$taxonomy->show_ui) {
+                continue;
+            }
+            $terms = get_terms(array(
+                'taxonomy' => $taxonomy->name,
+                'hide_empty' => true
+            ));
+            if (is_wp_error($terms) || count($terms) < 2) {
+                continue;
+            }
+            $field_name = 'filter[' . esc_attr($post_type) . '][tax][' . esc_attr($taxonomy->name) . '][]';
+            echo '<p>';
+            echo '<label class="wpu-import-export-label">' . esc_html($taxonomy->label) . '</label>';
+            echo '<span class="wpu-import-export-term-list">';
+            foreach ($terms as $term) {
+                $term_field_id = 'term_' . esc_attr($post_type) . '_' . esc_attr($taxonomy->name) . '_' . esc_attr($term->term_id);
+                echo '<label for="' . $term_field_id . '" style="display:block;">';
+                echo '<input type="checkbox" id="' . $term_field_id . '" name="' . $field_name . '" value="' . esc_attr($term->term_id) . '" /> ';
+                echo esc_html($term->name);
+                echo '</label>';
+            }
+            echo '</span>';
+            echo '</p>';
+        }
+
+        /* Post statuses */
+        $statuses = $this->get_valid_export_statuses();
+        echo '<p>';
+        echo '<label class="wpu-import-export-label">' . esc_html__('Status', 'wpu_import_export') . '</label>';
+        foreach ($statuses as $status) {
+            $field_id = 'status_' . esc_attr($post_type) . '_' . esc_attr($status->name);
+            echo '<label for="' . $field_id . '" style="margin-right:1em;">';
+            echo '<input type="checkbox" id="' . $field_id . '" name="filter[' . esc_attr($post_type) . '][status][]" value="' . esc_attr($status->name) . '"' . checked('publish', $status->name, false) . ' /> ';
+            echo esc_html($status->label);
+            echo '</label>';
+        }
+        echo '</p>';
+
+        echo '</details>';
     }
 
     public function page_action__export() {
@@ -300,15 +364,66 @@ class WPUImportExport {
     }
 
     public function export_post_type($post_type, $post_type_data) {
-        $posts = get_posts(array(
+        $args = array(
             'post_type' => $post_type,
-            'numberposts' => -1
-        ));
+            'numberposts' => -1,
+            'post_status' => $this->get_export_statuses($post_type),
+            'tax_query' => $this->get_export_tax_query($post_type)
+        );
+        $posts = get_posts($args);
         $lines = array();
         foreach ($posts as $post) {
             $lines[] = $this->post_to_array($post, $post_type_data);
         }
         $this->basetoolbox->export_array_to_csv($lines, $post_type);
+    }
+
+    /* Get valid export statuses (admin status list, without inactive & trash) */
+    public function get_valid_export_statuses() {
+        $excluded_statuses = array('auto-draft', 'acf-disabled', 'trash');
+        $statuses = get_post_stati(array('show_in_admin_status_list' => true), 'objects');
+        foreach ($excluded_statuses as $status) {
+            if (isset($statuses[$status])) {
+                unset($statuses[$status]);
+            }
+        }
+        return $statuses;
+    }
+
+    /* Get sanitized statuses from posted filters, fallback to publish */
+    public function get_export_statuses($post_type) {
+        $posted = isset($_POST['filter'][$post_type]['status']) && is_array($_POST['filter'][$post_type]['status']) ? $_POST['filter'][$post_type]['status'] : array();
+        $valid_statuses = array_keys($this->get_valid_export_statuses());
+        $statuses = array();
+        foreach ($posted as $status) {
+            if (in_array($status, $valid_statuses, true)) {
+                $statuses[] = $status;
+            }
+        }
+        return empty($statuses) ? array('publish') : $statuses;
+    }
+
+    /* Build a tax_query from posted filters */
+    public function get_export_tax_query($post_type) {
+        $posted = isset($_POST['filter'][$post_type]['tax']) && is_array($_POST['filter'][$post_type]['tax']) ? $_POST['filter'][$post_type]['tax'] : array();
+        $valid_taxonomies = get_object_taxonomies($post_type);
+        $tax_query = array('relation' => 'AND');
+        foreach ($posted as $taxonomy => $term_ids) {
+            if (!in_array($taxonomy, $valid_taxonomies, true) || !is_array($term_ids)) {
+                continue;
+            }
+            $term_ids = array_filter(array_map('intval', $term_ids));
+            if (empty($term_ids)) {
+                continue;
+            }
+            $tax_query[] = array(
+                'taxonomy' => $taxonomy,
+                'field' => 'term_id',
+                'terms' => $term_ids,
+                'operator' => 'IN'
+            );
+        }
+        return count($tax_query) > 1 ? $tax_query : array();
     }
 
     public function post_to_array($post, $post_type_data) {
