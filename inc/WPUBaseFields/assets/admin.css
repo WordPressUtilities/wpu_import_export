@@ -1,0 +1,192 @@
+@charset "UTF-8";
+
+/* ----------------------------------------------------------
+  Label
+---------------------------------------------------------- */
+
+.wpubasefield-main-label {
+    user-select: none;
+}
+
+.wpubasefield-input:not([data-type="checkbox"]) .wpubasefield-main-label {
+    display: block;
+    margin-bottom: 0.3em;
+}
+
+/* ----------------------------------------------------------
+  Layout
+---------------------------------------------------------- */
+
+.wpubasefield-input + .wpubasefield-input {
+    margin-top: 1em;
+}
+
+.wpubasefield-msg-invalid,
+.wpubasefield-msg-help {
+    display: block;
+    margin-top: 0.5em;
+}
+
+.wpubasefield-input[data-visible="0"],
+.wpubasefield-input[data-valid="1"] .wpubasefield-msg-invalid {
+    display: none;
+}
+
+.wpubasefield-msg-invalid,
+.wpubasefield-input[data-valid="0"] label {
+    color: red;
+}
+
+.wpubasefield-input[data-valid="0"] textarea,
+.wpubasefield-input[data-valid="0"] select,
+.wpubasefield-input[data-valid="0"] input {
+    border-color: red;
+}
+
+/* ----------------------------------------------------------
+  Columns
+---------------------------------------------------------- */
+
+@media (min-width:769px) {
+    .wpubasefield-input--columns > ul {
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 2em;
+        max-width: 100%;
+    }
+
+    .wpubasefield-input--columns > ul > * {
+        flex: 1;
+        margin-top: 0!important;
+    }
+}
+
+/* ----------------------------------------------------------
+  Fields
+---------------------------------------------------------- */
+
+.wpubasefield-input:not([data-type="editor"]) input:not([type="radio"]):not([type="checkbox"]) ,
+.wpubasefield-input:not([data-type="editor"]) select,
+.wpubasefield-input:not([data-type="editor"]) textarea {
+    width: 100%;
+}
+
+.wpubasefield-input textarea {
+    min-height: 5em;
+}
+
+.wpubasefield-checkbox-wrapper {
+    margin-right: 0.5em;
+    line-height: 1.5;
+}
+
+.wpubasefield-checkbox-wrapper input {
+    transform: translateY(0.1em);
+}
+
+.wpubasefield-checkbox-wrapper label {
+    display: inline-block;
+    vertical-align: 0;
+}
+
+/* File
+-------------------------- */
+
+.wpubasefields-file-wrap {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.wpubasefields-file-wrap > * {
+    flex: 1 1 auto;
+}
+
+.wpubasefields-file-wrap__main[data-haspreview="0"] .wpubasefields-file-wrap__remove,
+.wpubasefields-file-wrap__main[data-haspreview="0"] .wpubasefields-file-wrap__preview {
+    display: none;
+}
+
+.wpubasefields_select_file {
+    margin: 0!important;
+}
+
+.wpubasefields-file-wrap__main[data-haspreview="1"] .wpubasefields_select_file {
+    max-width: 50%;
+}
+
+.wpubasefields-file-wrap__preview {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    box-sizing: border-box;
+    padding: 0 0.3em;
+    max-width: 50%;
+    border: 1px solid #CCC;
+    border-radius: 2px;
+    white-space: nowrap;
+}
+
+.wpubasefields-file-wrap__preview > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Link
+-------------------------- */
+
+.wpubasefields-link-wrap__main {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.wpubasefields-link-wrap__preview {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5em;
+    box-sizing: border-box;
+    padding: 0.3em 0.5em;
+    min-width: 0;
+    border: 1px solid #CCC;
+    border-radius: 2px;
+}
+
+.wpubasefields-link-wrap__details {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.wpubasefields-link-wrap__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.wpubasefields-link-wrap__url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.85em;
+    white-space: nowrap;
+    color: #666;
+}
+
+.wpubasefields-link-wrap__buttons {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.wpubasefields-link-wrap__main[data-haspreview="0"] .wpubasefields-link-wrap__remove,
+.wpubasefields-link-wrap__main[data-haspreview="0"] .wpubasefields-link-wrap__preview {
+    display: none;
+}

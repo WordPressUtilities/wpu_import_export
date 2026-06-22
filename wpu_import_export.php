@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.3.0
+Version: 0.4.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,14 +21,16 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.3.0';
+    private $plugin_version = '0.4.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
     );
     private $basetoolbox;
+    private $capability = 'manage_options';
     private $messages = false;
     private $adminpages;
+    private $basefields;
     private $import_details = array();
     private $plugin_description;
     private $post_data = array();
@@ -39,6 +41,7 @@ class WPUImportExport {
         add_action('init', array(&$this, 'load_messages'));
         add_action('init', array(&$this, 'load_adminpage'));
         add_action('init', array(&$this, 'init'), 20);
+        add_action('init', array(&$this, 'load_basefields'), 30);
 
         /* Admin assets */
         add_action('admin_enqueue_scripts', array(&$this,
@@ -108,27 +111,61 @@ class WPUImportExport {
                 )
             )
         );
+        $this->capability = apply_filters('wpu_import_export_capability', $this->capability);
         $pages_options = array(
             'id' => $this->plugin_settings['id'],
-            'level' => 'manage_options',
+            'level' => $this->capability,
             'basename' => plugin_basename(__FILE__)
         );
         // Init admin page
         require_once __DIR__ . '/inc/WPUBaseAdminPage/WPUBaseAdminPage.php';
         $this->adminpages = new \wpu_import_export\WPUBaseAdminPage();
         $this->adminpages->init($pages_options, $admin_pages);
-        # MESSAGES
-        if (is_admin()) {
-            require_once __DIR__ . '/inc/WPUBaseMessages/WPUBaseMessages.php';
-            $this->messages = new \wpu_import_export\WPUBaseMessages($this->plugin_settings['id']);
+    }
+
+    public function load_basefields() {
+
+        /* Extract different uniqids */
+        $unique_keys = array();
+        foreach ($this->post_types as $post_type => $post_type_data) {
+            if (!isset($post_type_data['unique_key'])) {
+                continue;
+            }
+            $key = $post_type_data['unique_key'];
+            if (!isset($unique_keys[$key])) {
+                $unique_keys[$key] = array();
+            }
+            $unique_keys[$key][] = $post_type;
         }
+
+        $fields = array();
+        $field_groups = array();
+
+        foreach ($unique_keys as $key => $post_types) {
+            $fields[$key] = array(
+                'group' => 'wpu_import_export_' . $key,
+                'label' => 'Unique ID',
+                'readonly' => true,
+            );
+            $field_groups['wpu_import_export_' . $key] = array(
+                'label' => 'Import - Export',
+                'post_types' => $post_types
+            );
+        }
+
+        require_once __DIR__ . '/inc/WPUBaseFields/WPUBaseFields.php';
+        $this->basefields = new \wpu_import_export\WPUBaseFields($fields, $field_groups);
     }
 
     /* ----------------------------------------------------------
       Assets
     ---------------------------------------------------------- */
 
-    public function admin_assets($hook) {
+    public function admin_assets($hook_suffix) {
+        /* Only load on the plugin admin pages */
+        if (strpos($hook_suffix, $this->plugin_settings['id']) === false) {
+            return;
+        }
         wp_enqueue_style('wpu-import-export-style', plugins_url('assets/style.css', __FILE__), array(), $this->plugin_version);
     }
 
@@ -182,6 +219,19 @@ class WPUImportExport {
                     }
                     return wp_kses_post($value);
                 }
+            ),
+            'post_date' => array(
+                'get_value' => function ($post) {
+                    return $post->post_date;
+                },
+                'validate_value' => function ($value) {
+                    $timestamp = strtotime($value);
+                    if ($timestamp === false) {
+                        /* Unparseable / empty date: ignore, keep existing post date */
+                        return null;
+                    }
+                    return date('Y-m-d H:i:s', $timestamp);
+                }
             )
         );
         $this->post_data = apply_filters('wpu_import_export_post_data', $post_data);
@@ -224,7 +274,17 @@ class WPUImportExport {
             }
             if (!in_array($post_type_data['columns'][$column_name]['type'], $default_types)) {
                 unset($post_type_data['columns'][$column_name]);
+                continue;
             }
+            /* Normalize accepted columns (CSV header aliases for import) */
+            $accepted_columns = isset($column_data['accepted_columns']) ? $column_data['accepted_columns'] : array();
+            if (!is_array($accepted_columns)) {
+                $accepted_columns = array($accepted_columns);
+            }
+            $accepted_columns = array_map(function ($name) {
+                return strtolower(trim($name));
+            }, $accepted_columns);
+            $post_type_data['columns'][$column_name]['accepted_columns'] = $accepted_columns;
         }
 
         return $post_type_data;
@@ -261,16 +321,19 @@ class WPUImportExport {
 
     public function wpu_import_export_collect_flexible_columns($fields, $prefix, $group) {
         $columns = array();
+        $default_column = array(
+            'type' => 'post_meta'
+        );
         foreach ($fields as $key => $field) {
             $meta_key = $prefix . '_' . $key;
             if (isset($field['has_wpu_import_export']) && $field['has_wpu_import_export']) {
                 $column = $field['has_wpu_import_export'];
                 if (!is_array($column)) {
                     $column = array(
-                        'meta_key' => $meta_key,
-                        'type' => 'post_meta'
+                        'meta_key' => $meta_key
                     );
                 }
+                $column = array_merge($default_column, $column);
                 $column_key = substr($meta_key, strlen($group) + 1);
                 $columns[$column_key] = $column;
             }
@@ -471,7 +534,7 @@ class WPUImportExport {
             }
             echo '<h2>' . esc_html($post_type_object->label) . '</h2>';
             echo '<p>';
-            echo '<label for="file_' . esc_attr($post_type) . '">' . __('CSV File', 'wpu_import_export') . '</label><br />';
+            echo '<label for="file_' . esc_attr($post_type) . '">' . esc_html__('CSV File', 'wpu_import_export') . '</label><br />';
             echo '<input id="file_' . esc_attr($post_type) . '" type="file" name="file_' . esc_attr($post_type) . '" />';
             echo '</p>';
             submit_button(__('Upload File', 'wpu_import_export'), 'primary', 'upload_' . esc_attr($post_type));
@@ -504,8 +567,22 @@ class WPUImportExport {
             return;
         }
 
-        /* Get file content */
-        $file_content = file_get_contents($_FILES[$file_key]['tmp_name']);
+        /* Validate file extension & MIME type (CSV only) */
+        $file_name = isset($_FILES[$file_key]['name']) ? sanitize_file_name($_FILES[$file_key]['name']) : '';
+        $filetype = wp_check_filetype($file_name, array('csv' => 'text/csv', 'txt' => 'text/plain'));
+        if (!$filetype['ext']) {
+            $this->set_message('invalid_file_type', __('Invalid file type, please upload a CSV file', 'wpu_import_export'), 'error');
+            return;
+        }
+
+        /* Get file content through WP_Filesystem */
+        $tmp_name = $_FILES[$file_key]['tmp_name'];
+        if (!function_exists('WP_Filesystem')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        global $wp_filesystem;
+        WP_Filesystem();
+        $file_content = $wp_filesystem->get_contents($tmp_name);
         if (!$file_content) {
             $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
             return;
@@ -513,8 +590,7 @@ class WPUImportExport {
 
         /* Parse file content */
         $lines = $this->basetoolbox->csv_to_array($file_content);
-        $nb_lines = count($lines);
-        if (!$lines || $nb_lines < 1) {
+        if (count($lines) < 1) {
             $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
             return;
         }
@@ -525,7 +601,7 @@ class WPUImportExport {
             'error' => 0
         );
 
-        foreach ($lines as $i => $line) {
+        foreach ($lines as $line) {
             $this->create_or_update_post($post_type, $line);
         }
 
@@ -588,11 +664,15 @@ class WPUImportExport {
         /* Add post data */
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
 
-            if (!isset($line[$column_name])) {
+            $new_value = $this->get_line_value($line, $column_name, $column_data);
+            if ($new_value === null) {
                 continue;
             }
 
-            $new_value = $line[$column_name];
+            /* Convert markdown to HTML when flagged and value holds no HTML yet */
+            if (!empty($column_data['markdown']) && wp_strip_all_tags($new_value) === $new_value) {
+                $new_value = $this->basetoolbox->markdown_to_html($new_value);
+            }
 
             /* Load from post data */
             foreach ($this->post_data as $post_data_key => $post_data_value) {
@@ -602,12 +682,25 @@ class WPUImportExport {
                 if (isset($post_data_value['validate_value'])) {
                     $new_value = call_user_func($post_data_value['validate_value'], $new_value);
                 }
+                /* A null value means "ignore": keep the existing post value */
+                if ($new_value === null) {
+                    continue;
+                }
                 $post_data[$post_data_key] = $new_value;
             }
             if ($column_data['type'] == 'post_meta') {
                 $post_metas[$column_data['meta_key']] = $new_value;
             }
         }
+
+        /* Keep both dates in sync and allow date edits on update */
+        if (isset($post_data['post_date'])) {
+            $post_data['post_date_gmt'] = get_gmt_from_date($post_data['post_date']);
+            $post_data['edit_date'] = true;
+        }
+
+        $post_data = apply_filters('wpu_import_export_post_data_before_save', $post_data, $post_type, $line, $post_id);
+        $post_metas = apply_filters('wpu_import_export_post_metas_before_save', $post_metas, $post_type, $line, $post_id);
 
         if (!$post_id) {
             /* Create post */
@@ -631,6 +724,24 @@ class WPUImportExport {
 
         /* Return post id */
         return $post_id;
+    }
+
+    /* Resolve a column value from a CSV line, supporting accepted_columns aliases */
+    public function get_line_value($line, $column_name, $column_data) {
+        $candidates = array(strtolower(trim($column_name)));
+        if (!empty($column_data['accepted_columns'])) {
+            $candidates = array_merge($candidates, $column_data['accepted_columns']);
+        }
+        foreach ($candidates as $candidate) {
+            if (!isset($line[$candidate])) {
+                continue;
+            }
+            $value = $line[$candidate];
+            if ($value !== null && trim($value) !== '') {
+                return $value;
+            }
+        }
+        return null;
     }
 
     public function get_post_by_key($post_type, $key, $value) {

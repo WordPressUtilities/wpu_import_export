@@ -1,0 +1,1016 @@
+<?php
+namespace wpu_import_export;
+
+/*
+Class Name: WPU Base Fields
+Description: A class to handle fields in WordPress
+Version: 0.24.0
+Class URI: https://github.com/WordPressUtilities/wpubaseplugin
+Author: Darklg
+Author URI: https://darklg.me/
+License: MIT License
+License URI: https://opensource.org/licenses/MIT
+*/
+
+defined('ABSPATH') || die;
+
+class WPUBaseFields {
+    private $script_id;
+    private $version = '0.24.0';
+    private $fields = array();
+    private $field_groups = array();
+    private $supported_types = array(
+        'post',
+        'page',
+        'radio',
+        'select',
+        'editor',
+        'textarea',
+        'color',
+        'checkboxes',
+        'checkbox',
+        'tel',
+        'image',
+        'file',
+        'text',
+        'email',
+        'date',
+        'datetime',
+        'number',
+        'url',
+        'wp_link'
+    );
+
+    function __construct($fields = array(), $field_groups = array()) {
+        $this->init($fields, $field_groups);
+    }
+
+    private function init($fields = array(), $field_groups = array()) {
+        if (empty($fields)) {
+            return;
+        }
+
+        $this->script_id = str_replace('.', '_', 'wpubasefields_' . $this->version);
+
+        /* Build fields */
+        $this->build_fields($fields, $field_groups);
+
+        /* Display fields */
+        add_action('add_meta_boxes', array(&$this, 'display_boxes'));
+
+        /* Display box */
+        add_action('save_post', array(&$this, 'save_post'));
+
+        /* Term meta */
+        foreach ($this->field_groups as $group) {
+            if (empty($group['taxonomy'])) {
+                continue;
+            }
+            $taxonomies = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+            foreach ($taxonomies as $taxonomy) {
+                add_action($taxonomy . '_add_form_fields', array(&$this, 'display_term_add_fields'));
+                add_action($taxonomy . '_edit_form_fields', array(&$this, 'display_term_edit_fields'));
+                add_action('created_' . $taxonomy, array(&$this, 'save_term'));
+                add_action('edited_' . $taxonomy, array(&$this, 'save_term'));
+            }
+        }
+
+        /* Admin list columns */
+        $this->register_admin_columns();
+
+        /* Basic CSS */
+        add_action('admin_enqueue_scripts', array(&$this, 'admin_enqueue_scripts'));
+
+    }
+
+    private function build_fields($fields = array(), $field_groups = array()) {
+
+        $default_field_group = array(
+            'label' => 'Default',
+            'post_type' => 'post',
+            'capability' => 'edit_posts'
+        );
+
+        /* Groups */
+        if (!is_array($field_groups)) {
+            $field_groups = array();
+        }
+        foreach ($field_groups as $group_id => $group) {
+            if (!is_array($group)) {
+                $group = array();
+            }
+            if (!isset($group['label'])) {
+                $group['label'] = $group_id;
+            }
+            $group = array_merge($default_field_group, $group);
+
+            $this->field_groups[$group_id] = $group;
+        }
+
+        $need_default_group = false;
+
+        /* Extract fields with subfields */
+        foreach ($fields as $field_id => $field) {
+            if (!is_array($field) || !isset($field['sub_fields']) || !is_array($field['sub_fields'])) {
+                continue;
+            }
+            $first_subfield_key = array_key_first($field['sub_fields']);
+            $last_subfield_key = array_key_last($field['sub_fields']);
+            foreach ($field['sub_fields'] as $subfield_id => $subfield) {
+                if (!is_array($subfield)) {
+                    $subfield = array();
+                }
+                if (!isset($subfield['group']) && isset($field['group'])) {
+                    $subfield['group'] = $field['group'];
+                }
+                if ($subfield_id == $first_subfield_key) {
+
+                    $parent_attributes = array(
+                        'id' => 'wpubasefields_' . $field_id,
+                        'data-group' => $field_id,
+                        'class' => 'wpubasefield-input wpubasefield-input--group'
+                    );
+                    if (isset($field['toggle-display'])) {
+                        $parent_attributes['data-toggle-display'] = json_encode($field['toggle-display']);
+                    }
+                    $html_attrs = '';
+                    foreach ($parent_attributes as $key => $var) {
+                        $html_attrs .= ' ' . $key . '="' . esc_attr($var) . '"';
+                    }
+
+                    $subfield['_html_before'] = '<li' . $html_attrs . '><ul>';
+                }
+                if ($subfield_id == $last_subfield_key) {
+                    $subfield['_html_after'] = '</ul></li>';
+                }
+                $fields[$field_id . '__' . $subfield_id] = $subfield;
+            }
+            unset($fields[$field_id]);
+        }
+
+        /* Fields */
+        foreach ($fields as $field_id => $field) {
+            /* Check group */
+            if (!isset($field['group'])) {
+                error_log('Field group is not defined');
+                $need_default_group = true;
+                $field['group'] = 'default';
+            }
+            if (!isset($this->field_groups[$field['group']])) {
+                error_log('Field group does not exists');
+                $need_default_group = true;
+                $field['group'] = 'default';
+            }
+
+            $field = array_merge(array(
+                'label' => $field_id,
+                'column_start' => false,
+                'column_end' => false,
+                'required' => false,
+                'readonly' => false,
+                'help' => false,
+                'preview_format' => 'thumbnail',
+                'admin_column' => false
+            ), $field);
+
+            /* Normalize admin column opt-in : false (off) or array (on, with options) */
+            if ($field['admin_column'] === true) {
+                $field['admin_column'] = array();
+            } elseif (!is_array($field['admin_column'])) {
+                $field['admin_column'] = false;
+            }
+
+            if (!isset($field['type']) || !in_array($field['type'], $this->supported_types)) {
+                $field['type'] = 'text';
+            }
+            if (!isset($field['post_type'])) {
+                $field['post_type'] = $field['type'] == 'page' ? array('page') : array('post');
+            }
+            if (!is_array($field['post_type'])) {
+                $field['post_type'] = array($field['post_type']);
+            }
+            if (!isset($field['placeholder'])) {
+                $field['placeholder'] = $field['type'] == 'select' ? __('Select a value', 'wpubasefields') : '';
+            }
+            if (!isset($field['data']) || !is_array($field['data'])) {
+                $field['data'] = array('No', 'Yes');
+            }
+            $this->fields[$field_id] = $field;
+        }
+
+        /* Add default group if needed */
+        if ($need_default_group || empty($field_groups)) {
+            $this->field_groups['default'] = $default_field_group;
+        }
+
+    }
+
+    public function display_boxes() {
+        foreach ($this->field_groups as $group_id => $group) {
+            if (empty($group['post_type'])) {
+                continue;
+            }
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            add_meta_box('wpubasefields_group_' . $group_id, $group['label'], array(&$this, 'display_box_content'), $group['post_type'], 'advanced', 'default', array('group_id' => $group_id));
+        }
+    }
+
+    public function display_box_content($post, $args) {
+        $html_content = $this->get_fields_html($post->ID, $args['args']['group_id'], 'post');
+        if (empty($html_content)) {
+            return;
+        }
+        wp_nonce_field($args['id'] . '_nonce', $args['id'] . '_meta_box_nonce');
+        echo '<ul class="wpubasefield-list">' . $html_content . '</ul>';
+    }
+
+    private function get_fields_html($object_id, $group_id, $meta_type = 'post') {
+        $html_content = '';
+        foreach ($this->fields as $field_id => $field) {
+            if ($field['group'] != $group_id) {
+                continue;
+            }
+
+            if ($field['type'] == 'post' || $field['type'] == 'page') {
+                $p = get_posts(array(
+                    'post_type' => $field['post_type'],
+                    'posts_per_page' => 500
+                ));
+                $field['data'] = array();
+                foreach ($p as $post_item) {
+                    $field['data'][$post_item->ID] = $post_item->post_title;
+                }
+                asort($field['data']);
+            }
+
+            /* Get value based on meta type */
+            if ($meta_type === 'term' && $object_id) {
+                $value = get_term_meta($object_id, $field_id, true);
+            } elseif ($meta_type === 'term') {
+                $value = '';
+            } else {
+                $value = get_post_meta($object_id, $field_id, 1);
+            }
+
+            if (isset($field['default_value'])) {
+                if (is_null($value) || $value === '') {
+                    $value = $field['default_value'];
+                }
+                if (isset($field['data']) && in_array($field['type'], array('radio', 'select', 'checkboxes')) && !isset($field['data'][$value])) {
+                    $value = $field['default_value'];
+                }
+            }
+
+            $displayed_value = is_array($value) ? serialize($value) : $value;
+            $field_name = 'wpubasefields_' . $field_id;
+
+            $item_attributes = array(
+                'name' => $field_name,
+                'id' => $field_name
+            );
+            if ($field['required']) {
+                $item_attributes['required'] = 'required';
+            }
+            if ($field['readonly']) {
+                $item_attributes['readonly'] = 'readonly';
+            }
+            if ($field['placeholder'] && $field['type'] != 'select') {
+                $item_attributes['placeholder'] = $field['placeholder'];
+            }
+            if (isset($field['extra_attributes']) && is_array($field['extra_attributes'])) {
+                $item_attributes = array_merge($item_attributes, $field['extra_attributes']);
+            }
+
+            $id_name = '';
+            foreach ($item_attributes as $key => $var) {
+                $id_name .= ' ' . $key . '="' . esc_attr($var) . '"';
+            }
+
+            /* Build field HTML */
+            $field_html = '';
+
+            /* Label */
+            $label_html = '';
+            $label_html .= '<label class="wpubasefield-main-label" for="wpubasefields_' . $field_id . '">';
+            $label_html .= esc_html($field['label']);
+            if ($field['required']) {
+                $label_html .= '<em title="' . esc_attr(__('Required', 'wpubasefields')) . '">*</em>';
+            }
+            $label_html .= '</label>';
+
+            if ($field['type'] != 'checkbox') {
+                $field_html .= $label_html;
+            }
+
+            /* Field */
+            switch ($field['type']) {
+            case 'radio':
+                foreach ($field['data'] as $key => $var) {
+                    $radio_item_id = $field_name . '__' . $key;
+                    $field_html .= '<span class="wpubasefield-checkbox-wrapper">';
+                    $field_html .= '<input ' . checked($value, $key, false) . ' value="' . esc_attr($key) . '" name="' . $field_name . '" id="' . $radio_item_id . '" type="radio" />';
+                    $field_html .= '<label for="' . $radio_item_id . '">' . esc_html($var) . '</label>';
+                    $field_html .= '</span>';
+                }
+                break;
+            case 'checkboxes':
+                if (!is_array($value)) {
+                    $value = array();
+                }
+                foreach ($field['data'] as $key => $var) {
+                    $check_item_id = $field_name . '__' . $key;
+                    $field_html .= '<span class="wpubasefield-checkbox-wrapper">';
+                    $field_html .= '<input ' . checked(in_array($key, $value), true, false) . ' value="' . esc_attr($key) . '" name="' . $field_name . '[]" id="' . $check_item_id . '" type="checkbox" />';
+                    $field_html .= '<label for="' . $check_item_id . '">' . esc_html($var) . '</label>';
+                    $field_html .= '</span>';
+                }
+                break;
+            case 'select':
+            case 'post':
+            case 'page':
+                $field_html .= '<select ' . $id_name . '>';
+                $field_html .= '<option hidden>' . esc_html($field['placeholder']) . '</option>';
+                foreach ($field['data'] as $key => $var) {
+                    $field_html .= '<option ' . selected($value, $key, false) . ' value="' . $key . '">' . esc_html($var) . '</option>';
+                }
+                $field_html .= '</select>';
+                break;
+            case 'editor':
+                $editor_args = array(
+                    'media_buttons' => false,
+                    'textarea_rows' => 5
+                );
+                if (isset($field['editor_args']) && is_array($field['editor_args'])) {
+                    $editor_args = array_merge($editor_args, $field['editor_args']);
+                }
+                ob_start();
+                wp_editor($displayed_value, $field_name, $editor_args);
+                $field_html = ob_get_clean();
+                break;
+            case 'textarea':
+                $field_html .= '<textarea ' . $id_name . '>' . esc_html($value) . '</textarea>';
+                break;
+            case 'checkbox':
+                $field_html .= '<span class="wpubasefield-checkbox-wrapper">';
+                $field_html .= '<input ' . $id_name . ' class="field-checkbox" type="checkbox" value="1" ' . checked($value, '1', false) . ' />';
+                $field_html .= $label_html;
+                $field_html .= '</span>';
+                break;
+            case 'image':
+            case 'file':
+                $label_file = __('Select a file', 'wpubasefields');
+                $label_remove = __('Remove file', 'wpubasefields');
+                if ($field['type'] == 'image') {
+                    $label_file = __('Select an image', 'wpubasefields');
+                    $label_remove = __('Remove image', 'wpubasefields');
+                }
+                $preview = '';
+                $icon = 'dashicons-media-default';
+                if ($value && is_numeric($value)) {
+                    $preview = basename(get_attached_file($value));
+                }
+                $has_preview = $preview ? '1' : '0';
+
+                /* Display field */
+                $field_html .= '<div class="wpubasefields-file-wrap__main" data-haspreview="' . $has_preview . '">';
+                $field_html .= '<span class="wpubasefields-file-image">';
+                if ($has_preview) {
+                    $field_html .= wp_get_attachment_image($value, $field['preview_format']);
+                }
+                $field_html .= '</span>';
+                $field_html .= '<span class="wpubasefields-file-wrap">';
+                $field_html .= '<span class="wpubasefields-file-wrap__preview"><span>';
+                $field_html .= '<span class="dashicons ' . $icon . '"></span>';
+                $field_html .= '<span class="value">' . $preview . '</span>';
+                $field_html .= '</span></span>';
+                $field_html .= '<input ' . $id_name . ' type="hidden" value="' . $displayed_value . '" readonly />';
+                $field_html .= '<button type="button" class="wpubasefields_select_file button"  class="button" title="' . esc_attr($label_file) . '">' . esc_html($label_file) . '</button>';
+                $field_html .= '</span>';
+                $field_html .= '<small><a class="wpubasefields-file-wrap__remove" href="#" role="button">' . esc_html($label_remove) . '</a></small>';
+                $field_html .= '</div>';
+                break;
+            case 'wp_link':
+                $label_link = __('Select a link', 'wpubasefields');
+                $label_remove = __('Remove link', 'wpubasefields');
+                $link_data = array('url' => '', 'title' => '', 'target' => '');
+                if ($value) {
+                    $decoded = is_array($value) ? $value : json_decode($value, true);
+                    if (is_array($decoded)) {
+                        $link_data = array_merge($link_data, $decoded);
+                    }
+                }
+                $has_preview = !empty($link_data['url']) ? '1' : '0';
+                $field_html .= '<div class="wpubasefields-link-wrap__main" data-haspreview="' . $has_preview . '">';
+                $field_html .= '<span class="wpubasefields-link-wrap__preview">';
+                $field_html .= '<span class="dashicons dashicons-admin-links"></span>';
+                $field_html .= '<span class="wpubasefields-link-wrap__details">';
+                $field_html .= '<span class="wpubasefields-link-wrap__title">' . esc_html($link_data['title']) . '</span>';
+                $field_html .= '<span class="wpubasefields-link-wrap__url">' . esc_html($link_data['url']) . '</span>';
+                $field_html .= '</span>';
+                $field_html .= '</span>';
+                $field_html .= '<input ' . $id_name . ' type="hidden" value="' . esc_attr(json_encode($link_data)) . '" />';
+                $field_html .= '<span class="wpubasefields-link-wrap__buttons">';
+                $field_html .= '<button type="button" class="wpubasefields_select_link button" title="' . esc_attr($label_link) . '">' . esc_html($label_link) . '</button>';
+                $field_html .= '<small><a class="wpubasefields-link-wrap__remove" href="#" role="button">' . esc_html($label_remove) . '</a></small>';
+                $field_html .= '</span>';
+                $field_html .= '</div>';
+                break;
+            case 'text':
+            case 'color':
+            case 'number':
+            case 'email':
+            case 'date':
+            case 'datetime':
+            case 'url':
+                $field_type = $field['type'];
+                if ($field['type'] == 'datetime') {
+                    $field_type = 'datetime-local';
+                }
+                $field_html .= '<input ' . $id_name . ' type="' . esc_attr($field_type) . '" value="' . esc_attr($displayed_value) . '" />';
+            }
+
+            $field_html .= '<input class="wpubasefield-input-control" type="hidden" name="' . $field_name . '__control"  value="1" />';
+            if ($field['help']) {
+                $field_html .= '<small class="wpubasefield-msg-help">' . $field['help'] . '</small>';
+            }
+            $field_html .= '<small class="wpubasefield-msg-invalid">' . __('This field is invalid', 'wpubasefields') . '</small>';
+
+            if ($field_html) {
+                if (isset($field['_html_before'])) {
+                    $html_content .= $field['_html_before'];
+                }
+                if ($field['column_start']) {
+                    $html_content .= '<li class="wpubasefield-input wpubasefield-input--columns"><ul>';
+                }
+
+                $field_attributes = array(
+                    'class' => 'wpubasefield-input wpubasefield-input--' . $field['type'],
+                    'data-valid' => '1',
+                    'data-visible' => '1',
+                    'data-type' => $field['type']
+                );
+                if ($field['type'] == 'image') {
+                    $field_attributes['data-image-preview'] = $field['preview_format'];
+                }
+                if (isset($field['toggle-display'])) {
+                    $field_attributes['data-toggle-display'] = json_encode($field['toggle-display']);
+                }
+                $html_content .= '<li';
+                foreach ($field_attributes as $key => $var) {
+                    $html_content .= ' ' . $key . '="' . esc_attr($var) . '"';
+                }
+                $html_content .= '>' . $field_html . '</li>';
+                if ($field['column_end']) {
+                    $html_content .= '</ul></li>';
+                }
+                if (isset($field['_html_after'])) {
+                    $html_content .= $field['_html_after'];
+                }
+            }
+        }
+        return $html_content;
+    }
+
+    public function save_post($post_id) {
+        if (!$post_id) {
+            return;
+        }
+
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+
+        if (!current_user_can('edit_post', $post_id)) {
+            return;
+        }
+
+        foreach ($this->field_groups as $group_id => $group) {
+            if (!empty($group['taxonomy'])) {
+                continue;
+            }
+            $nnce = 'wpubasefields_group_' . $group_id;
+            if (!isset($_POST[$nnce . '_meta_box_nonce']) || !wp_verify_nonce($_POST[$nnce . '_meta_box_nonce'], $nnce . '_nonce')) {
+                continue;
+            }
+
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            foreach ($this->fields as $field_id => $field) {
+                if ($field['group'] != $group_id) {
+                    continue;
+                }
+                /* No control value : field will not be touched */
+                if (!isset($_POST['wpubasefields_' . $field_id . '__control'])) {
+                    continue;
+                }
+
+                if ($field['readonly']) {
+                    continue;
+                }
+
+                $value = ($field['type'] == 'checkbox') ? '0' : '';
+                if (isset($_POST['wpubasefields_' . $field_id])) {
+                    $value = ($field['type'] == 'checkbox') ? '1' : $_POST['wpubasefields_' . $field_id];
+                }
+
+                $posted_value = $this->check_field_value($value, $field);
+                if ($posted_value !== false) {
+                    update_post_meta($post_id, $field_id, $posted_value);
+                }
+            }
+        }
+    }
+
+    /* ----------------------------------------------------------
+      Term meta
+    ---------------------------------------------------------- */
+
+    public function display_term_add_fields($taxonomy) {
+        foreach ($this->field_groups as $group_id => $group) {
+            if (empty($group['taxonomy'])) {
+                continue;
+            }
+            $taxonomies = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+            if (!in_array($taxonomy, $taxonomies)) {
+                continue;
+            }
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            $html = $this->get_fields_html(0, $group_id, 'term');
+            if (!$html) {
+                continue;
+            }
+            $nonce_id = 'wpubasefields_group_' . $group_id;
+            echo '<div class="form-field wpubasefields-term-group">';
+            wp_nonce_field($nonce_id . '_nonce', $nonce_id . '_meta_box_nonce');
+            echo '<ul class="wpubasefield-list">' . $html . '</ul>';
+            echo '</div>';
+        }
+    }
+
+    public function display_term_edit_fields($term) {
+        foreach ($this->field_groups as $group_id => $group) {
+            if (empty($group['taxonomy'])) {
+                continue;
+            }
+            $taxonomies = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+            if (!in_array($term->taxonomy, $taxonomies)) {
+                continue;
+            }
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            $html = $this->get_fields_html($term->term_id, $group_id, 'term');
+            if (!$html) {
+                continue;
+            }
+            $nonce_id = 'wpubasefields_group_' . $group_id;
+            echo '<tr class="form-field wpubasefields-term-group"><td colspan="2">';
+            wp_nonce_field($nonce_id . '_nonce', $nonce_id . '_meta_box_nonce');
+            echo '<ul class="wpubasefield-list">' . $html . '</ul>';
+            echo '</td></tr>';
+        }
+    }
+
+    public function save_term($term_id) {
+        if (!$term_id) {
+            return;
+        }
+        $term = get_term($term_id);
+        if (!$term || is_wp_error($term)) {
+            return;
+        }
+        foreach ($this->field_groups as $group_id => $group) {
+            if (empty($group['taxonomy'])) {
+                continue;
+            }
+            $taxonomies = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+            if (!in_array($term->taxonomy, $taxonomies)) {
+                continue;
+            }
+            $nnce = 'wpubasefields_group_' . $group_id;
+            if (!isset($_POST[$nnce . '_meta_box_nonce']) || !wp_verify_nonce($_POST[$nnce . '_meta_box_nonce'], $nnce . '_nonce')) {
+                continue;
+            }
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            foreach ($this->fields as $field_id => $field) {
+                if ($field['group'] != $group_id) {
+                    continue;
+                }
+                if (!isset($_POST['wpubasefields_' . $field_id . '__control'])) {
+                    continue;
+                }
+                if ($field['readonly']) {
+                    continue;
+                }
+                $value = ($field['type'] == 'checkbox') ? '0' : '';
+                if (isset($_POST['wpubasefields_' . $field_id])) {
+                    $value = ($field['type'] == 'checkbox') ? '1' : $_POST['wpubasefields_' . $field_id];
+                }
+                $posted_value = $this->check_field_value($value, $field);
+                if ($posted_value !== false) {
+                    update_term_meta($term_id, $field_id, $posted_value);
+                }
+            }
+        }
+    }
+
+    private function check_field_value($value, $field) {
+        switch ($field['type']) {
+        case 'radio':
+        case 'select':
+            if (!array_key_exists($value, $field['data'])) {
+                return false;
+            }
+            break;
+        case 'checkboxes':
+            if (!is_array($value)) {
+                return false;
+            }
+            foreach ($value as $value_item) {
+                if (!array_key_exists($value_item, $field['data'])) {
+                    return false;
+                }
+            }
+            break;
+        case 'email':
+            if (filter_var($value, FILTER_VALIDATE_EMAIL) === false) {
+                return false;
+            }
+            break;
+        case 'date':
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                return false;
+            }
+            break;
+        case 'datetime':
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $value)) {
+                return false;
+            }
+            break;
+        case 'color':
+            if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $value)) {
+                return false;
+            }
+            break;
+        case 'number':
+        case 'image':
+        case 'file':
+            if (!is_numeric($value)) {
+                return false;
+            }
+            break;
+        case 'url':
+            if (filter_var($value, FILTER_VALIDATE_URL) === false) {
+                return false;
+            }
+            break;
+        case 'wp_link':
+            $decoded = json_decode(wp_unslash($value), true);
+            if (!is_array($decoded)) {
+                return json_encode(array('url' => '', 'title' => '', 'target' => ''));
+            }
+            $value = json_encode(array(
+                'url' => isset($decoded['url']) ? esc_url_raw($decoded['url']) : '',
+                'title' => isset($decoded['title']) ? sanitize_text_field($decoded['title']) : '',
+                'target' => isset($decoded['target']) && $decoded['target'] === '_blank' ? '_blank' : ''
+            ));
+            break;
+        case 'checkbox':
+            if ($value != '0' && $value != '1') {
+                return false;
+            }
+            break;
+        default:
+
+        }
+
+        return $value;
+
+    }
+
+    /* ----------------------------------------------------------
+      Admin list columns
+    ---------------------------------------------------------- */
+
+    private function register_admin_columns() {
+        $post_types = array();
+        $taxonomies = array();
+        foreach ($this->fields as $field_id => $field) {
+            if (!is_array($field['admin_column'])) {
+                continue;
+            }
+            $group = $this->field_groups[$field['group']];
+            if (!empty($group['taxonomy'])) {
+                $taxes = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+                foreach ($taxes as $tax) {
+                    $taxonomies[$tax] = 1;
+                }
+                continue;
+            }
+            $pts = is_array($group['post_type']) ? $group['post_type'] : array($group['post_type']);
+            foreach ($pts as $pt) {
+                $post_types[$pt] = 1;
+            }
+        }
+
+        foreach (array_keys($post_types) as $pt) {
+            add_filter('manage_' . $pt . '_posts_columns', function ($columns) use ($pt) {
+                return $this->add_post_columns($columns, $pt);
+            });
+            add_action('manage_' . $pt . '_posts_custom_column', array(&$this, 'render_post_column'), 10, 2);
+            add_filter('manage_edit-' . $pt . '_sortable_columns', function ($columns) use ($pt) {
+                return $this->add_sortable_columns($columns, $pt);
+            });
+        }
+
+        foreach (array_keys($taxonomies) as $tax) {
+            add_filter('manage_edit-' . $tax . '_columns', function ($columns) use ($tax) {
+                return $this->add_term_columns($columns, $tax);
+            });
+            add_filter('manage_' . $tax . '_custom_column', array(&$this, 'render_term_column'), 10, 3);
+        }
+
+        if (!empty($post_types)) {
+            add_action('pre_get_posts', array(&$this, 'sortable_orderby'));
+        }
+    }
+
+    /* Columns registration */
+
+    public function add_post_columns($columns, $post_type) {
+        $new_cols = array();
+        foreach ($this->fields as $field_id => $field) {
+            if (!is_array($field['admin_column'])) {
+                continue;
+            }
+            $group = $this->field_groups[$field['group']];
+            if (!empty($group['taxonomy'])) {
+                continue;
+            }
+            $pts = is_array($group['post_type']) ? $group['post_type'] : array($group['post_type']);
+            if (!in_array($post_type, $pts)) {
+                continue;
+            }
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            $new_cols['wpubasefields_' . $field_id] = $this->get_column_label($field);
+        }
+        return $this->insert_columns_before($columns, $new_cols, 'date');
+    }
+
+    public function add_term_columns($columns, $taxonomy) {
+        $new_cols = array();
+        foreach ($this->fields as $field_id => $field) {
+            if (!is_array($field['admin_column'])) {
+                continue;
+            }
+            $group = $this->field_groups[$field['group']];
+            if (empty($group['taxonomy'])) {
+                continue;
+            }
+            $taxes = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+            if (!in_array($taxonomy, $taxes)) {
+                continue;
+            }
+            if (!current_user_can($group['capability'])) {
+                continue;
+            }
+            $new_cols['wpubasefields_' . $field_id] = $this->get_column_label($field);
+        }
+        return $this->insert_columns_before($columns, $new_cols, 'posts');
+    }
+
+    public function add_sortable_columns($columns, $post_type) {
+        foreach ($this->fields as $field_id => $field) {
+            if (!is_array($field['admin_column']) || empty($field['admin_column']['sortable'])) {
+                continue;
+            }
+            $group = $this->field_groups[$field['group']];
+            if (!empty($group['taxonomy'])) {
+                continue;
+            }
+            $pts = is_array($group['post_type']) ? $group['post_type'] : array($group['post_type']);
+            if (!in_array($post_type, $pts)) {
+                continue;
+            }
+            $columns['wpubasefields_' . $field_id] = 'wpubasefields_' . $field_id;
+        }
+        return $columns;
+    }
+
+    /* Columns rendering */
+
+    public function render_post_column($column, $post_id) {
+        $field_id = $this->column_field_id($column);
+        if (!$field_id) {
+            return;
+        }
+        echo $this->render_column_value($field_id, get_post_meta($post_id, $field_id, true), $post_id);
+    }
+
+    public function render_term_column($content, $column, $term_id) {
+        $field_id = $this->column_field_id($column);
+        if (!$field_id) {
+            return $content;
+        }
+        return $this->render_column_value($field_id, get_term_meta($term_id, $field_id, true), $term_id);
+    }
+
+    /* Sortable query */
+
+    public function sortable_orderby($query) {
+        if (!is_admin() || !$query->is_main_query()) {
+            return;
+        }
+        $orderby = $query->get('orderby');
+        if (!is_string($orderby)) {
+            return;
+        }
+        $field_id = $this->column_field_id($orderby);
+        if (!$field_id) {
+            return;
+        }
+        $field = $this->fields[$field_id];
+        if (empty($field['admin_column']['sortable'])) {
+            return;
+        }
+        $numeric = in_array($field['type'], array('number', 'date', 'datetime'));
+        $query->set('meta_key', $field_id);
+        $query->set('orderby', $numeric ? 'meta_value_num' : 'meta_value');
+    }
+
+    /* Helpers */
+
+    private function column_field_id($column) {
+        if (!is_string($column) || strpos($column, 'wpubasefields_') !== 0) {
+            return false;
+        }
+        $field_id = substr($column, strlen('wpubasefields_'));
+        if (!isset($this->fields[$field_id]) || !is_array($this->fields[$field_id]['admin_column'])) {
+            return false;
+        }
+        return $field_id;
+    }
+
+    private function get_column_label($field) {
+        if (is_array($field['admin_column']) && !empty($field['admin_column']['label'])) {
+            return $field['admin_column']['label'];
+        }
+        return $field['label'];
+    }
+
+    private function insert_columns_before($columns, $new_cols, $before_key) {
+        if (empty($new_cols)) {
+            return $columns;
+        }
+        if (!isset($columns[$before_key])) {
+            return array_merge($columns, $new_cols);
+        }
+        $result = array();
+        foreach ($columns as $key => $label) {
+            if ($key === $before_key) {
+                $result = array_merge($result, $new_cols);
+            }
+            $result[$key] = $label;
+        }
+        return $result;
+    }
+
+    private function render_column_value($field_id, $value, $object_id) {
+        $field = $this->fields[$field_id];
+        $opts = is_array($field['admin_column']) ? $field['admin_column'] : array();
+        $empty = '<span aria-hidden="true">&mdash;</span>';
+
+        /* Custom rendering override */
+        if (isset($opts['callback']) && is_callable($opts['callback'])) {
+            return call_user_func($opts['callback'], $value, $object_id, $field_id);
+        }
+
+        /* Checkbox : 0 is a meaningful value */
+        if ($field['type'] == 'checkbox') {
+            return ($value === '1' || $value === 1) ? '<span class="dashicons dashicons-yes"></span>' : $empty;
+        }
+
+        /* Empty value */
+        if ($value === '' || $value === null || (is_array($value) && empty($value))) {
+            return $empty;
+        }
+
+        switch ($field['type']) {
+        case 'select':
+        case 'radio':
+            return isset($field['data'][$value]) ? esc_html($field['data'][$value]) : esc_html($value);
+        case 'post':
+        case 'page':
+            $title = get_the_title($value);
+            return $title ? esc_html($title) : $empty;
+        case 'checkboxes':
+            $value = maybe_unserialize($value);
+            if (!is_array($value) || empty($value)) {
+                return $empty;
+            }
+            $labels = array();
+            foreach ($value as $key) {
+                $labels[] = isset($field['data'][$key]) ? $field['data'][$key] : $key;
+            }
+            return esc_html(implode(', ', $labels));
+        case 'image':
+            if (is_numeric($value)) {
+                $img = wp_get_attachment_image($value, array(40, 40));
+                return $img ? $img : $empty;
+            }
+            return $empty;
+        case 'file':
+            if (is_numeric($value)) {
+                $file = get_attached_file($value);
+                return $file ? esc_html(basename($file)) : $empty;
+            }
+            return $empty;
+        case 'wp_link':
+            $decoded = is_array($value) ? $value : json_decode($value, true);
+            if (!is_array($decoded) || empty($decoded['url'])) {
+                return $empty;
+            }
+            $title = !empty($decoded['title']) ? $decoded['title'] : $decoded['url'];
+            return '<a href="' . esc_url($decoded['url']) . '">' . esc_html($title) . '</a>';
+        case 'color':
+            return '<span style="display:inline-block;width:18px;height:18px;border:1px solid #ccc;border-radius:2px;vertical-align:middle;background:' . esc_attr($value) . '"></span> ' . esc_html($value);
+        case 'editor':
+        case 'textarea':
+            return esc_html(wp_trim_words(wp_strip_all_tags($value), 12));
+        case 'url':
+            return '<a href="' . esc_url($value) . '">' . esc_html($value) . '</a>';
+        case 'email':
+            return '<a href="mailto:' . esc_attr($value) . '">' . esc_html($value) . '</a>';
+        default:
+            return esc_html($value);
+        }
+    }
+
+    /* ----------------------------------------------------------
+      Admin
+    ---------------------------------------------------------- */
+
+    public function admin_enqueue_scripts() {
+        $screen = get_current_screen();
+        if (!$screen) {
+            return;
+        }
+        $need_display_assets = false;
+
+        /* Post screens */
+        if ($screen->base == 'post') {
+            foreach ($this->field_groups as $group) {
+                if (!empty($group['taxonomy'])) {
+                    continue;
+                }
+                if (!current_user_can($group['capability'])) {
+                    continue;
+                }
+                if ($group['post_type'] == $screen->post_type || is_array($group['post_type']) && in_array($screen->post_type, $group['post_type'])) {
+                    $need_display_assets = true;
+                }
+            }
+        }
+
+        /* Term screens (add & edit) */
+        if (in_array($screen->base, array('edit-tags', 'term'))) {
+            foreach ($this->field_groups as $group) {
+                if (empty($group['taxonomy'])) {
+                    continue;
+                }
+                if (!current_user_can($group['capability'])) {
+                    continue;
+                }
+                $taxonomies = is_array($group['taxonomy']) ? $group['taxonomy'] : array($group['taxonomy']);
+                if (in_array($screen->taxonomy, $taxonomies)) {
+                    $need_display_assets = true;
+                }
+            }
+        }
+
+        if (!$need_display_assets) {
+            return;
+        }
+
+        /* JS */
+        wp_enqueue_media();
+        wp_enqueue_editor();
+        wp_enqueue_script('wplink');
+        wp_enqueue_script($this->script_id, plugins_url('assets/admin.js', __FILE__), array('jquery', 'wplink'), $this->version);
+
+        /* CSS */
+        wp_enqueue_style($this->script_id, plugins_url('assets/admin.css', __FILE__), array(), $this->version, false);
+    }
+
+}
+
+$WPUBaseFields = new WPUBaseFields();

@@ -4,7 +4,7 @@ namespace wpu_import_export;
 /*
 Class Name: WPU Base Toolbox
 Description: Cool helpers for WordPress Plugins
-Version: 0.25.0
+Version: 0.25.1
 Class URI: https://github.com/WordPressUtilities/wpubaseplugin
 Author: Darklg
 Author URI: https://darklg.me/
@@ -15,7 +15,7 @@ License URI: https://opensource.org/licenses/MIT
 defined('ABSPATH') || die;
 
 class WPUBaseToolbox {
-    private $plugin_version = '0.25.0';
+    private $plugin_version = '0.25.1';
     private $args = array();
     private $missing_plugins = array();
     private $invalid_plugins_versions = array();
@@ -650,6 +650,8 @@ class WPUBaseToolbox {
             return false;
         }
         $raw_line = array_fill_keys($column_names, '');
+        $column_names = array_map('trim', $column_names);
+        $column_names = array_map('strtolower', $column_names);
 
         /* Build array */
         $array = array();
