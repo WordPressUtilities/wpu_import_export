@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: WPU Import Export\n"
-"POT-Creation-Date: 2026-06-22 14:32+0200\n"
+"POT-Creation-Date: 2026-06-23 19:43+0200\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -141,7 +141,7 @@ msgstr "Aucune donnée disponible."
 msgid "Simple import export"
 msgstr "Importation et exportation simplifiée"
 
-#: .././wpu_import_export.php:91 .././wpu_import_export.php:366
+#: .././wpu_import_export.php:91 .././wpu_import_export.php:388
 msgid "Export"
 msgstr "Exporter"
 
@@ -153,80 +153,98 @@ msgstr "Réglages"
 msgid "Import"
 msgstr "Importer"
 
-#: .././wpu_import_export.php:354 .././wpu_import_export.php:526
+#: .././wpu_import_export.php:376 .././wpu_import_export.php:581
 msgid "No post types found"
 msgstr "Aucun type de publication trouvé"
 
-#: .././wpu_import_export.php:375
+#: .././wpu_import_export.php:397
 msgid "Filters"
 msgstr "Filtres"
 
-#: .././wpu_import_export.php:408
+#: .././wpu_import_export.php:430
 msgid "Status"
 msgstr "Statut"
 
-#: .././wpu_import_export.php:537
+#: .././wpu_import_export.php:442
+msgid "Date"
+msgstr "Date"
+
+#: .././wpu_import_export.php:443
+msgid "From"
+msgstr "De"
+
+#: .././wpu_import_export.php:445
+msgid "To"
+msgstr "À"
+
+#: .././wpu_import_export.php:470
+msgid "No posts found for export with the current filters."
+msgstr ""
+"Aucune publication ne correspond aux critères de filtrage actuels pour "
+"l'exportation."
+
+#: .././wpu_import_export.php:592
 msgid "CSV File"
 msgstr "Fichier CSV"
 
-#: .././wpu_import_export.php:540
+#: .././wpu_import_export.php:595
 msgid "Upload File"
 msgstr "Télécharger un fichier"
 
-#: .././wpu_import_export.php:560
+#: .././wpu_import_export.php:615
 msgid "Invalid post"
 msgstr "Post invalide"
 
-#: .././wpu_import_export.php:566
+#: .././wpu_import_export.php:621
 msgid "Invalid file"
 msgstr "Fichier non valide"
 
-#: .././wpu_import_export.php:574
+#: .././wpu_import_export.php:629
 msgid "Invalid file type, please upload a CSV file"
-msgstr "Type de fichier non valide. Veuillez télécharger un fichier CSV."
+msgstr "Type de fichier non valide. Veuillez télécharger un fichier CSV"
 
-#: .././wpu_import_export.php:587 .././wpu_import_export.php:594
+#: .././wpu_import_export.php:642 .././wpu_import_export.php:649
 msgid "Invalid file content"
 msgstr "Contenu du fichier non valide"
 
-#: .././wpu_import_export.php:610
+#: .././wpu_import_export.php:665
 #, php-format
 msgid "Lines processed: %d"
 msgstr "Lignes traitées : %d"
 
-#: .././wpu_import_export.php:614
+#: .././wpu_import_export.php:669
 #, php-format
 msgid "1 new post created"
 msgid_plural "%d new posts created"
 msgstr[0] "1 publication créée"
 msgstr[1] "%s publications créées"
 
-#: .././wpu_import_export.php:618
+#: .././wpu_import_export.php:673
 #, php-format
 msgid "1 post updated"
 msgid_plural "%d posts updated"
 msgstr[0] "1 publication mise à jour"
 msgstr[1] "%s publications mises à jour"
 
-#: .././wpu_import_export.php:621
+#: .././wpu_import_export.php:676
 #, php-format
 msgid "1 post skipped"
 msgid_plural "%d posts skipped"
 msgstr[0] "1 publication ignorée"
 msgstr[1] "%s publications ignorées"
 
-#: .././wpu_import_export.php:624
+#: .././wpu_import_export.php:679
 #, php-format
 msgid "1 error"
 msgid_plural "%d errors"
 msgstr[0] "1 erreur"
 msgstr[1] "%s erreurs"
 
-#: .././wpu_import_export.php:645
+#: .././wpu_import_export.php:700
 msgid "Missing unique key"
 msgstr "Clé unique manquante"
 
-#: .././wpu_import_export.php:651
+#: .././wpu_import_export.php:706
 msgid "Missing unique key value"
 msgstr "Valeur de clé unique manquante"
 

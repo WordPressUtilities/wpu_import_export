@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.4.0
+Version: 0.5.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.4.0';
+    private $plugin_version = '0.5.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -145,7 +145,7 @@ class WPUImportExport {
             $fields[$key] = array(
                 'group' => 'wpu_import_export_' . $key,
                 'label' => 'Unique ID',
-                'readonly' => true,
+                'readonly' => true
             );
             $field_groups['wpu_import_export_' . $key] = array(
                 'label' => 'Import - Export',
@@ -209,6 +209,17 @@ class WPUImportExport {
                     return wp_kses_post($value);
                 }
             ),
+            'post_name' => array(
+                'get_value' => function ($post) {
+                    return $post->post_name;
+                },
+                'validate_value' => function ($value) {
+                    if (!is_string($value)) {
+                        return '';
+                    }
+                    return sanitize_title($value);
+                }
+            ),
             'post_excerpt' => array(
                 'get_value' => function ($post) {
                     return $post->post_excerpt;
@@ -252,6 +263,17 @@ class WPUImportExport {
         /* Build default data */
         $post_type_data['unique_key'] = isset($post_type_data['unique_key']) ? $post_type_data['unique_key'] : 'uniqid';
         $post_type_data['columns'] = isset($post_type_data['columns']) && is_array($post_type_data['columns']) ? $post_type_data['columns'] : array();
+
+        /* Load post data */
+        if (isset($post_type_data['load_post_data']) && $post_type_data['load_post_data'] === true) {
+            $default_columns = array();
+            foreach ($this->post_data as $post_data_key => $post_data_value) {
+                $default_columns[$post_data_key] = array(
+                    'type' => $post_data_key
+                );
+            }
+            $post_type_data['columns'] = array_merge($default_columns, $post_type_data['columns']);
+        }
 
         /* Build default columns */
         if (empty($post_type_data['columns'])) {
@@ -415,6 +437,15 @@ class WPUImportExport {
         }
         echo '</p>';
 
+        /* Date range */
+        echo '<p>';
+        echo '<label class="wpu-import-export-label">' . esc_html__('Date', 'wpu_import_export') . '</label>';
+        echo '<label for="date_after_' . esc_attr($post_type) . '" style="margin-right:0.5em;">' . esc_html__('From', 'wpu_import_export') . '</label>';
+        echo '<input type="date" id="date_after_' . esc_attr($post_type) . '" name="filter[' . esc_attr($post_type) . '][date_after]" style="margin-right:1em;" />';
+        echo '<label for="date_before_' . esc_attr($post_type) . '" style="margin-right:0.5em;">' . esc_html__('To', 'wpu_import_export') . '</label>';
+        echo '<input type="date" id="date_before_' . esc_attr($post_type) . '" name="filter[' . esc_attr($post_type) . '][date_before]" />';
+        echo '</p>';
+
         echo '</details>';
     }
 
@@ -431,9 +462,14 @@ class WPUImportExport {
             'post_type' => $post_type,
             'numberposts' => -1,
             'post_status' => $this->get_export_statuses($post_type),
-            'tax_query' => $this->get_export_tax_query($post_type)
+            'tax_query' => $this->get_export_tax_query($post_type),
+            'date_query' => $this->get_export_date_query($post_type)
         );
         $posts = get_posts($args);
+        if (empty($posts)) {
+            $this->set_message('export_empty', __('No posts found for export with the current filters.', 'wpu_import_export'), 'error');
+            return;
+        }
         $lines = array();
         foreach ($posts as $post) {
             $lines[] = $this->post_to_array($post, $post_type_data);
@@ -464,6 +500,25 @@ class WPUImportExport {
             }
         }
         return empty($statuses) ? array('publish') : $statuses;
+    }
+
+    /* Build a date_query from posted filters */
+    public function get_export_date_query($post_type) {
+        $posted = isset($_POST['filter'][$post_type]) ? $_POST['filter'][$post_type] : array();
+        $after = isset($posted['date_after']) ? sanitize_text_field($posted['date_after']) : '';
+        $before = isset($posted['date_before']) ? sanitize_text_field($posted['date_before']) : '';
+
+        $date_query = array();
+        if ($after && preg_match('/^\d{4}-\d{2}-\d{2}$/', $after)) {
+            $date_query['after'] = $after . ' 00:00:00';
+            $date_query['inclusive'] = true;
+        }
+        if ($before && preg_match('/^\d{4}-\d{2}-\d{2}$/', $before)) {
+            $date_query['before'] = $before . ' 23:59:59';
+            $date_query['inclusive'] = true;
+        }
+
+        return empty($date_query) ? array() : array($date_query);
     }
 
     /* Build a tax_query from posted filters */
