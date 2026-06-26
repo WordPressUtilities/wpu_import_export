@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.5.0
+Version: 0.6.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.5.0';
+    private $plugin_version = '0.6.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -287,12 +287,22 @@ class WPUImportExport {
         /* Ensure columns are valid */
         $default_types = array_keys($this->post_data);
         $default_types[] = 'post_meta';
+        $default_types[] = 'repeater';
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
             if (!isset($column_data['type'])) {
                 $post_type_data['columns'][$column_name]['type'] = 'post_meta';
             }
             if ($post_type_data['columns'][$column_name]['type'] == 'post_meta') {
                 $post_type_data['columns'][$column_name]['meta_key'] = isset($column_data['meta_key']) ? $column_data['meta_key'] : $column_name;
+            }
+            if ($post_type_data['columns'][$column_name]['type'] === 'repeater') {
+                if (!isset($column_data['sub_fields']) || !is_array($column_data['sub_fields'])) {
+                    unset($post_type_data['columns'][$column_name]);
+                    continue;
+                }
+                $post_type_data['columns'][$column_name]['meta_key'] = isset($column_data['meta_key']) ? $column_data['meta_key'] : $column_name;
+                $post_type_data['columns'][$column_name]['format'] = isset($column_data['format']) ? $column_data['format'] : 'indexed';
+                $post_type_data['columns'][$column_name]['sub_fields'] = array_values($column_data['sub_fields']);
             }
             if (!in_array($post_type_data['columns'][$column_name]['type'], $default_types)) {
                 unset($post_type_data['columns'][$column_name]);
@@ -556,8 +566,29 @@ class WPUImportExport {
             if ($column_data['type'] == 'post_meta') {
                 $lines[$column_name] = get_post_meta($post->ID, $column_data['meta_key'], true);
             }
+            if ($column_data['type'] === 'repeater') {
+                $lines[$column_name] = $this->export_repeater_meta($post->ID, $column_data);
+            }
         }
         return $lines;
+    }
+
+    public function export_repeater_meta($post_id, $column_data) {
+        $meta_key = $column_data['meta_key'];
+        $count = (int) get_post_meta($post_id, $meta_key, true);
+        $sub_fields = $column_data['sub_fields'];
+
+        if ($column_data['format'] === 'newline') {
+            $values = array();
+            for ($i = 0; $i < $count; $i++) {
+                $val = get_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_fields[0], true);
+                if ($val !== '') {
+                    $values[] = $val;
+                }
+            }
+            return implode("\n", $values);
+        }
+        return '';
     }
 
     public function get_post_unique_key($post_id, $key) {
@@ -719,6 +750,10 @@ class WPUImportExport {
         /* Add post data */
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
 
+            if ($column_data['type'] === 'repeater') {
+                continue;
+            }
+
             $new_value = $this->get_line_value($line, $column_name, $column_data);
             if ($new_value === null) {
                 continue;
@@ -777,8 +812,40 @@ class WPUImportExport {
             update_post_meta($post_id, $meta_key, $meta_value);
         }
 
+        foreach ($post_type_data['columns'] as $column_name => $column_data) {
+            if ($column_data['type'] !== 'repeater') {
+                continue;
+            }
+            $value = $this->get_line_value($line, $column_name, $column_data);
+            if ($value === null) {
+                continue;
+            }
+            $this->save_repeater_meta($post_id, $column_data, $value);
+        }
+
         /* Return post id */
         return $post_id;
+    }
+
+    public function save_repeater_meta($post_id, $column_data, $value) {
+        $meta_key = $column_data['meta_key'];
+        $sub_fields = $column_data['sub_fields'];
+
+        if ($column_data['format'] === 'newline') {
+            $rows = array_values(array_filter(explode("\n", $value), function ($v) {
+                return trim($v) !== '';
+            }));
+            $old_count = (int) get_post_meta($post_id, $meta_key, true);
+            for ($i = count($rows); $i < $old_count; $i++) {
+                foreach ($sub_fields as $sub_field) {
+                    delete_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field);
+                }
+            }
+            update_post_meta($post_id, $meta_key, count($rows));
+            foreach ($rows as $i => $row_value) {
+                update_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_fields[0], $row_value);
+            }
+        }
     }
 
     /* Resolve a column value from a CSV line, supporting accepted_columns aliases */
