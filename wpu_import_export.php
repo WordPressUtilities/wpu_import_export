@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.6.0
+Version: 0.6.1
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.6.0';
+    private $plugin_version = '0.6.1';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -303,6 +303,13 @@ class WPUImportExport {
                 $post_type_data['columns'][$column_name]['meta_key'] = isset($column_data['meta_key']) ? $column_data['meta_key'] : $column_name;
                 $post_type_data['columns'][$column_name]['format'] = isset($column_data['format']) ? $column_data['format'] : 'indexed';
                 $post_type_data['columns'][$column_name]['sub_fields'] = array_values($column_data['sub_fields']);
+                if ($post_type_data['columns'][$column_name]['format'] === 'columns') {
+                    if (!isset($column_data['max']) || !is_numeric($column_data['max'])) {
+                        unset($post_type_data['columns'][$column_name]);
+                        continue;
+                    }
+                    $post_type_data['columns'][$column_name]['max'] = (int) $column_data['max'];
+                }
             }
             if (!in_array($post_type_data['columns'][$column_name]['type'], $default_types)) {
                 unset($post_type_data['columns'][$column_name]);
@@ -567,7 +574,12 @@ class WPUImportExport {
                 $lines[$column_name] = get_post_meta($post->ID, $column_data['meta_key'], true);
             }
             if ($column_data['type'] === 'repeater') {
-                $lines[$column_name] = $this->export_repeater_meta($post->ID, $column_data);
+                $exported = $this->export_repeater_meta($post->ID, $column_data);
+                if (is_array($exported)) {
+                    $lines = array_merge($lines, $exported);
+                } else {
+                    $lines[$column_name] = $exported;
+                }
             }
         }
         return $lines;
@@ -587,6 +599,16 @@ class WPUImportExport {
                 }
             }
             return implode("\n", $values);
+        }
+        if ($column_data['format'] === 'columns') {
+            $max = $column_data['max'];
+            $result = array();
+            for ($i = 0; $i < $max; $i++) {
+                foreach ($sub_fields as $sub_field) {
+                    $result[$meta_key . '_' . $i . '_' . $sub_field] = get_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field, true);
+                }
+            }
+            return $result;
         }
         return '';
     }
@@ -816,6 +838,10 @@ class WPUImportExport {
             if ($column_data['type'] !== 'repeater') {
                 continue;
             }
+            if ($column_data['format'] === 'columns') {
+                $this->save_repeater_meta($post_id, $column_data, $line);
+                continue;
+            }
             $value = $this->get_line_value($line, $column_name, $column_data);
             if ($value === null) {
                 continue;
@@ -845,6 +871,26 @@ class WPUImportExport {
             foreach ($rows as $i => $row_value) {
                 update_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_fields[0], $row_value);
             }
+        }
+        if ($column_data['format'] === 'columns') {
+            // $value is the full CSV $line array
+            $max = $column_data['max'];
+            $count = 0;
+            for ($i = 0; $i < $max; $i++) {
+                $row_has_value = false;
+                foreach ($sub_fields as $sub_field) {
+                    $csv_key = $meta_key . '_' . $i . '_' . $sub_field;
+                    $val = isset($value[$csv_key]) ? $value[$csv_key] : '';
+                    update_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field, $val);
+                    if (trim($val) !== '') {
+                        $row_has_value = true;
+                    }
+                }
+                if ($row_has_value) {
+                    $count = $i + 1;
+                }
+            }
+            update_post_meta($post_id, $meta_key, $count);
         }
     }
 
