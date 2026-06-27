@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.6.1
+Version: 0.7.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.6.1';
+    private $plugin_version = '0.7.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -50,6 +50,9 @@ class WPUImportExport {
 
         /* Compatibility with WPU ACF Flexible */
         add_filter('wpu_import_export_post_types', array(&$this, 'wpu_acf_flexible__post_types'), 20, 1);
+
+        /* Compatibility with WPU Post Metas */
+        add_filter('wpu_import_export_post_types', array(&$this, 'wpu_post_metas__post_types'), 21, 1);
     }
 
     /* ----------------------------------------------------------
@@ -288,6 +291,7 @@ class WPUImportExport {
         $default_types = array_keys($this->post_data);
         $default_types[] = 'post_meta';
         $default_types[] = 'repeater';
+        $default_types[] = 'taxonomy';
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
             if (!isset($column_data['type'])) {
                 $post_type_data['columns'][$column_name]['type'] = 'post_meta';
@@ -309,6 +313,12 @@ class WPUImportExport {
                         continue;
                     }
                     $post_type_data['columns'][$column_name]['max'] = (int) $column_data['max'];
+                }
+            }
+            if ($post_type_data['columns'][$column_name]['type'] === 'taxonomy') {
+                if (empty($column_data['taxonomy'])) {
+                    unset($post_type_data['columns'][$column_name]);
+                    continue;
                 }
             }
             if (!in_array($post_type_data['columns'][$column_name]['type'], $default_types)) {
@@ -360,21 +370,11 @@ class WPUImportExport {
 
     public function wpu_import_export_collect_flexible_columns($fields, $prefix, $group) {
         $columns = array();
-        $default_column = array(
-            'type' => 'post_meta'
-        );
         foreach ($fields as $key => $field) {
             $meta_key = $prefix . '_' . $key;
             if (isset($field['has_wpu_import_export']) && $field['has_wpu_import_export']) {
-                $column = $field['has_wpu_import_export'];
-                if (!is_array($column)) {
-                    $column = array(
-                        'meta_key' => $meta_key
-                    );
-                }
-                $column = array_merge($default_column, $column);
                 $column_key = substr($meta_key, strlen($group) + 1);
-                $columns[$column_key] = $column;
+                $columns[$column_key] = $this->build_column_from_field($field, $meta_key);
             }
             if (isset($field['sub_fields']) && is_array($field['sub_fields'])) {
                 $columns = array_merge($columns, $this->wpu_import_export_collect_flexible_columns($field['sub_fields'], $meta_key, $group));
@@ -382,6 +382,38 @@ class WPUImportExport {
         }
 
         return $columns;
+    }
+
+    public function wpu_post_metas__post_types($post_types) {
+        $fields = apply_filters('wputh_post_metas_fields', array());
+        $boxes = apply_filters('wputh_post_metas_boxes', array());
+
+        foreach ($fields as $key => $field) {
+            if (!isset($field['has_wpu_import_export'], $field['box']) || !$field['has_wpu_import_export']) {
+                continue;
+            }
+            $box = isset($boxes[$field['box']]) ? $boxes[$field['box']] : false;
+            if (!$box || !isset($box['post_type'])) {
+                continue;
+            }
+            $post_type_keys = (array) $box['post_type'];
+            foreach ($post_type_keys as $post_type) {
+                if (!isset($post_types[$post_type]['columns'])) {
+                    continue;
+                }
+                $post_types[$post_type]['columns'][$key] = $this->build_column_from_field($field, $key);
+            }
+        }
+
+        return $post_types;
+    }
+
+    private function build_column_from_field($field, $meta_key) {
+        $column = $field['has_wpu_import_export'];
+        if (!is_array($column)) {
+            $column = array('meta_key' => $meta_key);
+        }
+        return array_merge(array('type' => 'post_meta'), $column);
     }
 
     /* ----------------------------------------------------------
@@ -491,6 +523,7 @@ class WPUImportExport {
         foreach ($posts as $post) {
             $lines[] = $this->post_to_array($post, $post_type_data);
         }
+        $lines = apply_filters('wpu_import_export_export_lines', $lines, $post_type, $post_type_data);
         $this->basetoolbox->export_array_to_csv($lines, $post_type);
     }
 
@@ -572,6 +605,10 @@ class WPUImportExport {
             }
             if ($column_data['type'] == 'post_meta') {
                 $lines[$column_name] = get_post_meta($post->ID, $column_data['meta_key'], true);
+            }
+            if ($column_data['type'] === 'taxonomy') {
+                $terms = get_the_terms($post->ID, $column_data['taxonomy']);
+                $lines[$column_name] = (!$terms || is_wp_error($terms)) ? '' : implode(',', wp_list_pluck($terms, 'slug'));
             }
             if ($column_data['type'] === 'repeater') {
                 $exported = $this->export_repeater_meta($post->ID, $column_data);
@@ -835,6 +872,21 @@ class WPUImportExport {
         }
 
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
+            if ($column_data['type'] === 'taxonomy') {
+                $value = $this->get_line_value($line, $column_name, $column_data);
+                if ($value === null) {
+                    continue;
+                }
+                $slugs = array_filter(array_map('trim', explode(',', $value)));
+                $term_ids = array();
+                foreach ($slugs as $slug) {
+                    $term = get_term_by('slug', $slug, $column_data['taxonomy']);
+                    if ($term) {
+                        $term_ids[] = $term->term_id;
+                    }
+                }
+                wp_set_post_terms($post_id, $term_ids, $column_data['taxonomy']);
+            }
             if ($column_data['type'] !== 'repeater') {
                 continue;
             }
