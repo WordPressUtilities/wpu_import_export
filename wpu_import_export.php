@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.7.0
+Version: 0.7.1
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.7.0';
+    private $plugin_version = '0.7.1';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -411,7 +411,10 @@ class WPUImportExport {
     private function build_column_from_field($field, $meta_key) {
         $column = $field['has_wpu_import_export'];
         if (!is_array($column)) {
-            $column = array('meta_key' => $meta_key);
+            $column = array();
+        }
+        if (!isset($column['meta_key'])) {
+            $column['meta_key'] = $meta_key;
         }
         return array_merge(array('type' => 'post_meta'), $column);
     }
@@ -791,17 +794,18 @@ class WPUImportExport {
             $this->import_details['skipped']++;
             return;
         }
-        $unique_key_value = isset($line[$unique_key]) ? $line[$unique_key] : null;
+        $unique_key_value = isset($line[$unique_key]) && $line[$unique_key] !== '' ? $line[$unique_key] : null;
+        $allow_create_without_key = !empty($post_type_data['allow_create_without_key']);
         if (!$unique_key_value) {
-            $this->set_message('missing_unique_key_value', __('Missing unique key value', 'wpu_import_export'), 'error');
-            $this->import_details['skipped']++;
-            return;
+            if (!$allow_create_without_key) {
+                $this->set_message('missing_unique_key_value', __('Missing unique key value', 'wpu_import_export'), 'error');
+                $this->import_details['skipped']++;
+                return;
+            }
         }
-        $post_id = $this->get_post_by_key($post_type, $unique_key, $unique_key_value);
+        $post_id = $unique_key_value ? $this->get_post_by_key($post_type, $unique_key, $unique_key_value) : false;
 
-        $post_metas = array(
-            $unique_key => $unique_key_value
-        );
+        $post_metas = $unique_key_value ? array($unique_key => $unique_key_value) : array();
         $post_data = array(
             'post_type' => $post_type
         );
@@ -860,6 +864,9 @@ class WPUImportExport {
                 return false;
             }
             $this->import_details['new']++;
+            if (!$unique_key_value) {
+                $post_metas[$unique_key] = $this->get_post_unique_key($post_id, $unique_key);
+            }
 
         } else {
             $post_data['ID'] = $post_id;
