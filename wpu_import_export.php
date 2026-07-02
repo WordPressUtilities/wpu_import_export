@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.7.1
+Version: 0.8.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.7.1';
+    private $plugin_version = '0.8.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -292,6 +292,7 @@ class WPUImportExport {
         $default_types[] = 'post_meta';
         $default_types[] = 'repeater';
         $default_types[] = 'taxonomy';
+        $default_types[] = 'acf_flexible_block';
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
             if (!isset($column_data['type'])) {
                 $post_type_data['columns'][$column_name]['type'] = 'post_meta';
@@ -320,6 +321,11 @@ class WPUImportExport {
                     unset($post_type_data['columns'][$column_name]);
                     continue;
                 }
+            }
+            if ($post_type_data['columns'][$column_name]['type'] === 'acf_flexible_block') {
+                $post_type_data['columns'][$column_name]['field'] = isset($column_data['field']) ? $column_data['field'] : 'content-blocks';
+                $post_type_data['columns'][$column_name]['subfield'] = isset($column_data['subfield']) ? $column_data['subfield'] : 'content';
+                $post_type_data['columns'][$column_name]['layout'] = isset($column_data['layout']) ? $column_data['layout'] : 'content';
             }
             if (!in_array($post_type_data['columns'][$column_name]['type'], $default_types)) {
                 unset($post_type_data['columns'][$column_name]);
@@ -621,6 +627,10 @@ class WPUImportExport {
                     $lines[$column_name] = $exported;
                 }
             }
+            if ($column_data['type'] === 'acf_flexible_block') {
+                /* Import-only: keep the header column but export nothing */
+                $lines[$column_name] = '';
+            }
         }
         return $lines;
     }
@@ -813,7 +823,7 @@ class WPUImportExport {
         /* Add post data */
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
 
-            if ($column_data['type'] === 'repeater') {
+            if ($column_data['type'] === 'repeater' || $column_data['type'] === 'acf_flexible_block') {
                 continue;
             }
 
@@ -908,8 +918,94 @@ class WPUImportExport {
             $this->save_repeater_meta($post_id, $column_data, $value);
         }
 
+        /* ACF flexible blocks: collect ordered rows per field, then replace in one call */
+        if (function_exists('update_field')) {
+            $rows_by_field = array();
+            foreach ($post_type_data['columns'] as $column_name => $column_data) {
+                if ($column_data['type'] !== 'acf_flexible_block') {
+                    continue;
+                }
+                $value = $this->get_line_value($line, $column_name, $column_data);
+                if ($value === null) {
+                    continue;
+                }
+                $row = $this->parse_flexible_block_cell($value, $column_data, $post_id);
+                if (!$row) {
+                    continue;
+                }
+                $rows_by_field[$column_data['field']][] = $row;
+            }
+
+            /* Replace the whole flexible only when at least one valid cell was filled */
+            foreach ($rows_by_field as $field => $rows) {
+                $rows = $this->filter_valid_flexible_rows($field, $rows);
+                if (!empty($rows)) {
+                    update_field($field, array_values($rows), $post_id);
+                }
+            }
+        }
+
         /* Return post id */
         return $post_id;
+    }
+
+    /* Drop rows whose layout is not a registered layout of the ACF flexible field.
+       ACF stores the layout name in the parent meta without validating it: an unknown
+       layout silently creates a row with no recognized sub-fields ("group but no rows"). */
+    public function filter_valid_flexible_rows($field, $rows) {
+        if (!function_exists('acf_get_field')) {
+            return $rows;
+        }
+        $field_object = acf_get_field($field);
+        if (!is_array($field_object) || empty($field_object['layouts'])) {
+            return $rows;
+        }
+        $valid_layouts = wp_list_pluck($field_object['layouts'], 'name');
+        foreach ($rows as $i => $row) {
+            if (!isset($row['acf_fc_layout']) || !in_array($row['acf_fc_layout'], $valid_layouts, true)) {
+                $this->set_message('invalid_flexible_layout', sprintf(
+                    /* translators: 1: layout name, 2: field name */
+                    __('Unknown flexible layout "%1$s" for field "%2$s", block skipped', 'wpu_import_export'),
+                    isset($row['acf_fc_layout']) ? $row['acf_fc_layout'] : '',
+                    $field
+                ), 'error');
+                unset($rows[$i]);
+            }
+        }
+        return $rows;
+    }
+
+    /* Parse a flexible block cell ("type:<layout>" first line, body after) into an ACF row */
+    public function parse_flexible_block_cell($value, $column_data, $post_id) {
+        $field = $column_data['field'];
+        $body = $value;
+        $layout = $column_data['layout'];
+
+        /* First line "type:<layout>" overrides the default layout */
+        $lines = preg_split('/\r\n|\r|\n/', $value);
+        if (preg_match('/^\s*type\s*:\s*(.+?)\s*$/i', $lines[0], $matches)) {
+            $layout = $matches[1];
+            $body = implode("\n", array_slice($lines, 1));
+        }
+
+        if ($layout === '') {
+            return null;
+        }
+
+        /* Convert markdown to HTML when flagged and value holds no HTML yet */
+        if (!empty($column_data['markdown']) && wp_strip_all_tags($body) === $body) {
+            $body = $this->basetoolbox->markdown_to_html($body);
+        }
+
+        $row = array(
+            'acf_fc_layout' => $layout,
+            $column_data['subfield'] => $body
+        );
+
+        /* Let the project map complex layouts (FAQ, similar, ...) or skip the row */
+        $row = apply_filters('wpu_import_export_flexible_row', $row, $layout, $body, $post_id, $field);
+
+        return is_array($row) ? $row : null;
     }
 
     public function save_repeater_meta($post_id, $column_data, $value) {
