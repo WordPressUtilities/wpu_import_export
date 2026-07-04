@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.8.0
+Version: 0.9.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,20 +21,21 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.8.0';
+    private $plugin_version = '0.9.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
     );
     private $basetoolbox;
     private $capability = 'manage_options';
-    private $messages = false;
+    private $messages;
     private $adminpages;
     private $basefields;
     private $import_details = array();
     private $plugin_description;
     private $post_data = array();
     private $post_types = array();
+    private $translation_groups = array();
     public function __construct() {
         add_action('init', array(&$this, 'load_translation'));
         add_action('init', array(&$this, 'load_toolbox'));
@@ -504,7 +505,40 @@ class WPUImportExport {
         echo '<input type="date" id="date_before_' . esc_attr($post_type) . '" name="filter[' . esc_attr($post_type) . '][date_before]" />';
         echo '</p>';
 
+        /* Languages (Polylang) */
+        $languages = $this->get_languages();
+        if (count($languages) > 1 && $this->is_translated_post_type($post_type)) {
+            echo '<p>';
+            echo '<label class="wpu-import-export-label">' . esc_html__('Language', 'wpu_import_export') . '</label>';
+            foreach ($languages as $slug => $name) {
+                $field_id = 'lang_' . esc_attr($post_type) . '_' . esc_attr($slug);
+                echo '<label for="' . $field_id . '" style="margin-right:1em;">';
+                echo '<input type="checkbox" id="' . $field_id . '" name="filter[' . esc_attr($post_type) . '][lang][]" value="' . esc_attr($slug) . '" /> ';
+                echo esc_html($name);
+                echo '</label>';
+            }
+            echo '</p>';
+        }
+
         echo '</details>';
+    }
+
+    /* Available Polylang languages, slug => name (empty if Polylang inactive) */
+    public function get_languages() {
+        if (!function_exists('pll_languages_list')) {
+            return array();
+        }
+        $slugs = pll_languages_list(array('fields' => 'slug'));
+        $names = pll_languages_list(array('fields' => 'name'));
+        if (!is_array($slugs) || !is_array($names) || count($slugs) !== count($names)) {
+            return array();
+        }
+        return array_combine($slugs, $names);
+    }
+
+    /* Whether the special lang/translation columns apply to this post type */
+    public function is_translated_post_type($post_type) {
+        return function_exists('pll_is_translated_post_type') && pll_is_translated_post_type($post_type);
     }
 
     public function page_action__export() {
@@ -523,6 +557,11 @@ class WPUImportExport {
             'tax_query' => $this->get_export_tax_query($post_type),
             'date_query' => $this->get_export_date_query($post_type)
         );
+        $lang = $this->get_export_lang($post_type);
+        if (!empty($lang)) {
+            $args['lang'] = $lang;
+        }
+
         $posts = get_posts($args);
         if (empty($posts)) {
             $this->set_message('export_empty', __('No posts found for export with the current filters.', 'wpu_import_export'), 'error');
@@ -580,6 +619,19 @@ class WPUImportExport {
         return empty($date_query) ? array() : array($date_query);
     }
 
+    /* Build the Polylang lang arg from posted filters. Empty string = all languages (neutralizes Polylang's current-language default) */
+    public function get_export_lang($post_type) {
+        $posted = isset($_POST['filter'][$post_type]['lang']) && is_array($_POST['filter'][$post_type]['lang']) ? $_POST['filter'][$post_type]['lang'] : array();
+        $valid = array_keys($this->get_languages());
+        $langs = array();
+        foreach ($posted as $lang) {
+            if (in_array($lang, $valid, true)) {
+                $langs[] = $lang;
+            }
+        }
+        return implode(',', $langs);
+    }
+
     /* Build a tax_query from posted filters */
     public function get_export_tax_query($post_type) {
         $posted = isset($_POST['filter'][$post_type]['tax']) && is_array($_POST['filter'][$post_type]['tax']) ? $_POST['filter'][$post_type]['tax'] : array();
@@ -605,7 +657,11 @@ class WPUImportExport {
 
     public function post_to_array($post, $post_type_data) {
         $lines = array();
-        $lines[$post_type_data['unique_key']] = $this->get_post_unique_key($post->ID, $post_type_data['unique_key']);
+        $lines[$post_type_data['unique_key']] = $this->get_export_unique_key($post, $post_type_data['unique_key']);
+        /* Special lang column, right after the unique key (Polylang, translated post types only) */
+        if ($this->is_translated_post_type($post_type_data['post_type'])) {
+            $lines['lang'] = pll_get_post_language($post->ID);
+        }
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
             foreach ($this->post_data as $post_data_key => $post_data_value) {
                 if ($column_data['type'] == $post_data_key) {
@@ -672,6 +728,44 @@ class WPUImportExport {
         }
         return $unique_key_value;
 
+    }
+
+    /* Unique key for export: secondary-language translations derive their key from the
+       reference (default-language) translation as `base__<lang>`, overwriting any stored key.
+       Reference-language and non-translated posts keep the standard per-post key. */
+    public function get_export_unique_key($post, $key) {
+        if (!$this->is_translated_post_type($post->post_type)) {
+            return $this->get_post_unique_key($post->ID, $key);
+        }
+        $lang = pll_get_post_language($post->ID);
+        if (!$lang) {
+            return $this->get_post_unique_key($post->ID, $key);
+        }
+        $translations = pll_get_post_translations($post->ID);
+        $anchor_lang = $this->get_group_anchor_lang($translations);
+        if ($lang === $anchor_lang || !isset($translations[$anchor_lang])) {
+            /* This post is the group anchor (or has no siblings): base key, no suffix */
+            return $this->get_post_unique_key($post->ID, $key);
+        }
+        $derived = $this->get_post_unique_key($translations[$anchor_lang], $key) . '__' . $lang;
+        update_post_meta($post->ID, $key, $derived);
+        return $derived;
+    }
+
+    /* Deterministic anchor language of a translation group: default language if present,
+       else the first present language in Polylang order. Every group member resolves the
+       same anchor, so their derived keys share the same base. */
+    public function get_group_anchor_lang($translations) {
+        $default = pll_default_language();
+        if (isset($translations[$default])) {
+            return $default;
+        }
+        foreach (pll_languages_list(array('fields' => 'slug')) as $slug) {
+            if (isset($translations[$slug])) {
+                return $slug;
+            }
+        }
+        return $default;
     }
 
     /* ----------------------------------------------------------
@@ -759,9 +853,14 @@ class WPUImportExport {
             'error' => 0
         );
 
+        /* Pass 1: create/update posts, assign language, accumulate translation groups */
+        $this->translation_groups = array();
         foreach ($lines as $line) {
-            $this->create_or_update_post($post_type, $line);
+            $post_id = $this->create_or_update_post($post_type, $line);
+            $this->collect_translation_group($post_type, $line, $post_id);
         }
+        /* Pass 2: link translations (all posts now exist) */
+        $this->link_translations();
 
         $message_type = 'error';
         $details_text = array(
@@ -947,6 +1046,46 @@ class WPUImportExport {
 
         /* Return post id */
         return $post_id;
+    }
+
+    /* Assign the imported post language and accumulate its translation group (Polylang) */
+    public function collect_translation_group($post_type, $line, $post_id) {
+        if (!$post_id || !$this->is_translated_post_type($post_type)) {
+            return;
+        }
+        $lang = isset($line['lang']) ? sanitize_key($line['lang']) : '';
+        if (!$lang || !in_array($lang, array_keys($this->get_languages()), true)) {
+            return;
+        }
+        pll_set_post_language($post_id, $lang);
+
+        /* Group key = unique_key value without the trailing __<lang> suffix */
+        $unique_key = $this->post_types[$post_type]['unique_key'];
+        $key_value = isset($line[$unique_key]) ? $line[$unique_key] : '';
+        if ($key_value === '') {
+            return;
+        }
+        $group = $key_value;
+        if ($lang !== pll_default_language()) {
+            $suffix = '__' . $lang;
+            if (substr($key_value, -strlen($suffix)) === $suffix) {
+                $group = substr($key_value, 0, -strlen($suffix));
+            }
+        }
+        $this->translation_groups[$group][$lang] = $post_id;
+    }
+
+    /* Link accumulated translation groups (needs every post to exist first) */
+    public function link_translations() {
+        if (!function_exists('pll_save_post_translations')) {
+            return;
+        }
+        foreach ($this->translation_groups as $group) {
+            if (count($group) < 2) {
+                continue;
+            }
+            pll_save_post_translations($group);
+        }
     }
 
     /* Drop rows whose layout is not a registered layout of the ACF flexible field.

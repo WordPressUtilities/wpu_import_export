@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: WPU Import Export\n"
-"POT-Creation-Date: 2026-06-23 19:43+0200\n"
+"POT-Creation-Date: 2026-07-04 20:40+0200\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -137,116 +137,126 @@ msgstr ""
 msgid "No data available."
 msgstr "Aucune donnée disponible."
 
-#: .././wpu_import_export.php:67
+#: .././wpu_import_export.php:71
 msgid "Simple import export"
 msgstr "Importation et exportation simplifiée"
 
-#: .././wpu_import_export.php:91 .././wpu_import_export.php:388
+#: .././wpu_import_export.php:95 .././wpu_import_export.php:447
 msgid "Export"
 msgstr "Exporter"
 
-#: .././wpu_import_export.php:93
+#: .././wpu_import_export.php:97
 msgid "Settings"
 msgstr "Réglages"
 
-#: .././wpu_import_export.php:103
+#: .././wpu_import_export.php:107
 msgid "Import"
 msgstr "Importer"
 
-#: .././wpu_import_export.php:376 .././wpu_import_export.php:581
+#: .././wpu_import_export.php:435 .././wpu_import_export.php:778
 msgid "No post types found"
 msgstr "Aucun type de publication trouvé"
 
-#: .././wpu_import_export.php:397
+#: .././wpu_import_export.php:456
 msgid "Filters"
 msgstr "Filtres"
 
-#: .././wpu_import_export.php:430
+#: .././wpu_import_export.php:489
 msgid "Status"
 msgstr "Statut"
 
-#: .././wpu_import_export.php:442
+#: .././wpu_import_export.php:501
 msgid "Date"
 msgstr "Date"
 
-#: .././wpu_import_export.php:443
+#: .././wpu_import_export.php:502
 msgid "From"
 msgstr "De"
 
-#: .././wpu_import_export.php:445
+#: .././wpu_import_export.php:504
 msgid "To"
 msgstr "À"
 
-#: .././wpu_import_export.php:470
+#: .././wpu_import_export.php:512
+msgid "Language"
+msgstr "Langue"
+
+#: .././wpu_import_export.php:567
 msgid "No posts found for export with the current filters."
 msgstr ""
 "Aucune publication ne correspond aux critères de filtrage actuels pour "
 "l'exportation."
 
-#: .././wpu_import_export.php:592
+#: .././wpu_import_export.php:789
 msgid "CSV File"
 msgstr "Fichier CSV"
 
-#: .././wpu_import_export.php:595
+#: .././wpu_import_export.php:792
 msgid "Upload File"
 msgstr "Télécharger un fichier"
 
-#: .././wpu_import_export.php:615
+#: .././wpu_import_export.php:812
 msgid "Invalid post"
 msgstr "Post invalide"
 
-#: .././wpu_import_export.php:621
+#: .././wpu_import_export.php:818
 msgid "Invalid file"
 msgstr "Fichier non valide"
 
-#: .././wpu_import_export.php:629
+#: .././wpu_import_export.php:826
 msgid "Invalid file type, please upload a CSV file"
 msgstr "Type de fichier non valide. Veuillez télécharger un fichier CSV"
 
-#: .././wpu_import_export.php:642 .././wpu_import_export.php:649
+#: .././wpu_import_export.php:839 .././wpu_import_export.php:846
 msgid "Invalid file content"
 msgstr "Contenu du fichier non valide"
 
-#: .././wpu_import_export.php:665
+#: .././wpu_import_export.php:867
 #, php-format
 msgid "Lines processed: %d"
 msgstr "Lignes traitées : %d"
 
-#: .././wpu_import_export.php:669
+#: .././wpu_import_export.php:871
 #, php-format
 msgid "1 new post created"
 msgid_plural "%d new posts created"
 msgstr[0] "1 publication créée"
 msgstr[1] "%s publications créées"
 
-#: .././wpu_import_export.php:673
+#: .././wpu_import_export.php:875
 #, php-format
 msgid "1 post updated"
 msgid_plural "%d posts updated"
 msgstr[0] "1 publication mise à jour"
 msgstr[1] "%s publications mises à jour"
 
-#: .././wpu_import_export.php:676
+#: .././wpu_import_export.php:878
 #, php-format
 msgid "1 post skipped"
 msgid_plural "%d posts skipped"
 msgstr[0] "1 publication ignorée"
 msgstr[1] "%s publications ignorées"
 
-#: .././wpu_import_export.php:679
+#: .././wpu_import_export.php:881
 #, php-format
 msgid "1 error"
 msgid_plural "%d errors"
 msgstr[0] "1 erreur"
 msgstr[1] "%s erreurs"
 
-#: .././wpu_import_export.php:700
+#: .././wpu_import_export.php:902
 msgid "Missing unique key"
 msgstr "Clé unique manquante"
 
-#: .././wpu_import_export.php:706
+#: .././wpu_import_export.php:910
 msgid "Missing unique key value"
 msgstr "Valeur de clé unique manquante"
+
+#: .././wpu_import_export.php:1107
+#, php-format
+msgid "Unknown flexible layout \"%1$s\" for field \"%2$s\", block skipped"
+msgstr ""
+"Mise en page flexible inconnue « %1$s » pour le champ « %2$s », bloc ignoré"
 
 #~ msgid "Import successful"
 #~ msgstr "Importation réussie"
