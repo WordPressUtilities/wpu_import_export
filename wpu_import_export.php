@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.9.0
+Version: 0.10.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.9.0';
+    private $plugin_version = '0.10.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -34,6 +34,7 @@ class WPUImportExport {
     private $import_details = array();
     private $plugin_description;
     private $post_data = array();
+    private $value_types = array();
     private $post_types = array();
     private $translation_groups = array();
     public function __construct() {
@@ -179,6 +180,7 @@ class WPUImportExport {
 
     public function init() {
         $this->build_default_post_data();
+        $this->build_default_value_types();
         $post_types = apply_filters('wpu_import_export_post_types', array());
         foreach ($post_types as $post_type => $post_type_data) {
             $post_type_data = $this->clean_post_type_data($post_type, $post_type_data);
@@ -252,6 +254,47 @@ class WPUImportExport {
         $this->post_data = apply_filters('wpu_import_export_post_data', $post_data);
     }
 
+    public function build_default_value_types() {
+        $value_types = array(
+            'number' => array(
+                'default_value' => 0,
+                'validate_value' => function ($value, $default) {
+                    /* Keep digits, separators and sign only */
+                    $clean = preg_replace('/[^0-9.,\-]/', '', (string) $value);
+                    /* French format: comma is the decimal separator, dots are thousands */
+                    if (strpos($clean, ',') !== false) {
+                        $clean = str_replace(',', '.', str_replace('.', '', $clean));
+                    }
+                    if (!is_numeric($clean)) {
+                        return $default;
+                    }
+                    return $clean + 0;
+                }
+            ),
+            'email' => array(
+                'default_value' => '',
+                'validate_value' => function ($value, $default) {
+                    $email = sanitize_email((string) $value);
+                    return is_email($email) ? $email : $default;
+                }
+            ),
+            'url' => array(
+                'default_value' => '',
+                'validate_value' => function ($value, $default) {
+                    $url = esc_url_raw(trim((string) $value));
+                    return $url !== '' ? $url : $default;
+                }
+            ),
+            'text' => array(
+                'default_value' => '',
+                'validate_value' => function ($value, $default) {
+                    return sanitize_text_field((string) $value);
+                }
+            )
+        );
+        $this->value_types = apply_filters('wpu_import_export_value_types', $value_types);
+    }
+
     public function clean_post_type_data($post_type, $post_type_data) {
 
         /* Valid type */
@@ -290,10 +333,12 @@ class WPUImportExport {
 
         /* Ensure columns are valid */
         $default_types = array_keys($this->post_data);
-        $default_types[] = 'post_meta';
-        $default_types[] = 'repeater';
-        $default_types[] = 'taxonomy';
-        $default_types[] = 'acf_flexible_block';
+        $default_types = array_merge(array(
+            'post_meta',
+            'repeater',
+            'taxonomy',
+            'acf_flexible_block'
+        ), $default_types);
         foreach ($post_type_data['columns'] as $column_name => $column_data) {
             if (!isset($column_data['type'])) {
                 $post_type_data['columns'][$column_name]['type'] = 'post_meta';
@@ -423,7 +468,27 @@ class WPUImportExport {
         if (!isset($column['meta_key'])) {
             $column['meta_key'] = $meta_key;
         }
+        /* Derive value_type from the source field type unless explicitly set */
+        if (!isset($column['value_type']) && isset($field['type'])) {
+            $column['value_type'] = $field['type'];
+        }
         return array_merge(array('type' => 'post_meta'), $column);
+    }
+
+    /* Resolve a post_meta value against an explicit closure or a value_type validator */
+    private function validate_meta_value($value, $column_data) {
+        /* Explicit column closure wins */
+        if (isset($column_data['validate_value']) && is_callable($column_data['validate_value'])) {
+            $default = isset($column_data['default_value']) ? $column_data['default_value'] : '';
+            return call_user_func($column_data['validate_value'], $value, $default);
+        }
+        /* Fall back to the value_type registry */
+        if (empty($column_data['value_type']) || !isset($this->value_types[$column_data['value_type']])) {
+            return $value;
+        }
+        $type = $this->value_types[$column_data['value_type']];
+        $default = isset($column_data['default_value']) ? $column_data['default_value'] : $type['default_value'];
+        return call_user_func($type['validate_value'], $value, $default);
     }
 
     /* ----------------------------------------------------------
@@ -951,7 +1016,7 @@ class WPUImportExport {
                 $post_data[$post_data_key] = $new_value;
             }
             if ($column_data['type'] == 'post_meta') {
-                $post_metas[$column_data['meta_key']] = $new_value;
+                $post_metas[$column_data['meta_key']] = $this->validate_meta_value($new_value, $column_data);
             }
         }
 
