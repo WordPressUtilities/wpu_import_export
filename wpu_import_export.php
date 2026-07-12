@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.10.0
+Version: 0.10.1
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.10.0';
+    private $plugin_version = '0.10.1';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -37,6 +37,8 @@ class WPUImportExport {
     private $value_types = array();
     private $post_types = array();
     private $translation_groups = array();
+    private $languages_cache;
+    private $translated_post_types_cache = array();
     public function __construct() {
         add_action('init', array(&$this, 'load_translation'));
         add_action('init', array(&$this, 'load_toolbox'));
@@ -247,7 +249,7 @@ class WPUImportExport {
                         /* Unparseable / empty date: ignore, keep existing post date */
                         return null;
                     }
-                    return date('Y-m-d H:i:s', $timestamp);
+                    return wp_date('Y-m-d H:i:s', $timestamp);
                 }
             )
         );
@@ -475,6 +477,14 @@ class WPUImportExport {
         return array_merge(array('type' => 'post_meta'), $column);
     }
 
+    /* Convert markdown to HTML when the column is flagged and the value holds no HTML yet */
+    private function maybe_markdown($value, $column_data) {
+        if (!empty($column_data['markdown']) && wp_strip_all_tags($value) === $value) {
+            return $this->basetoolbox->markdown_to_html($value);
+        }
+        return $value;
+    }
+
     /* Resolve a post_meta value against an explicit closure or a value_type validator */
     private function validate_meta_value($value, $column_data) {
         /* Explicit column closure wins */
@@ -590,20 +600,26 @@ class WPUImportExport {
 
     /* Available Polylang languages, slug => name (empty if Polylang inactive) */
     public function get_languages() {
+        if (is_array($this->languages_cache)) {
+            return $this->languages_cache;
+        }
         if (!function_exists('pll_languages_list')) {
-            return array();
+            return $this->languages_cache = array();
         }
         $slugs = pll_languages_list(array('fields' => 'slug'));
         $names = pll_languages_list(array('fields' => 'name'));
         if (!is_array($slugs) || !is_array($names) || count($slugs) !== count($names)) {
-            return array();
+            return $this->languages_cache = array();
         }
-        return array_combine($slugs, $names);
+        return $this->languages_cache = array_combine($slugs, $names);
     }
 
     /* Whether the special lang/translation columns apply to this post type */
     public function is_translated_post_type($post_type) {
-        return function_exists('pll_is_translated_post_type') && pll_is_translated_post_type($post_type);
+        if (!isset($this->translated_post_types_cache[$post_type])) {
+            $this->translated_post_types_cache[$post_type] = function_exists('pll_is_translated_post_type') && pll_is_translated_post_type($post_type);
+        }
+        return $this->translated_post_types_cache[$post_type];
     }
 
     public function page_action__export() {
@@ -996,10 +1012,7 @@ class WPUImportExport {
                 continue;
             }
 
-            /* Convert markdown to HTML when flagged and value holds no HTML yet */
-            if (!empty($column_data['markdown']) && wp_strip_all_tags($new_value) === $new_value) {
-                $new_value = $this->basetoolbox->markdown_to_html($new_value);
-            }
+            $new_value = $this->maybe_markdown($new_value, $column_data);
 
             /* Load from post data */
             foreach ($this->post_data as $post_data_key => $post_data_value) {
@@ -1044,7 +1057,11 @@ class WPUImportExport {
 
         } else {
             $post_data['ID'] = $post_id;
-            wp_update_post($post_data);
+            $updated = wp_update_post($post_data, true);
+            if (is_wp_error($updated)) {
+                $this->import_details['error']++;
+                return false;
+            }
             $this->import_details['updated']++;
         }
 
@@ -1196,10 +1213,7 @@ class WPUImportExport {
             return null;
         }
 
-        /* Convert markdown to HTML when flagged and value holds no HTML yet */
-        if (!empty($column_data['markdown']) && wp_strip_all_tags($body) === $body) {
-            $body = $this->basetoolbox->markdown_to_html($body);
-        }
+        $body = $this->maybe_markdown($body, $column_data);
 
         $row = array(
             'acf_fc_layout' => $layout,
