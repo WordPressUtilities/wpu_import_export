@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.10.1
+Version: 0.11.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.10.1';
+    private $plugin_version = '0.11.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -45,6 +45,7 @@ class WPUImportExport {
         add_action('init', array(&$this, 'load_messages'));
         add_action('init', array(&$this, 'load_adminpage'));
         add_action('init', array(&$this, 'init'), 20);
+        add_action('init', array(&$this, 'register_bulk_export'), 25);
         add_action('init', array(&$this, 'load_basefields'), 30);
 
         /* Admin assets */
@@ -630,6 +631,55 @@ class WPUImportExport {
         }
     }
 
+    /* ----------------------------------------------------------
+      BULK EXPORT (post list)
+    ---------------------------------------------------------- */
+
+    /* Register an "Export" bulk action on each supported post type list */
+    public function register_bulk_export() {
+        if (!current_user_can($this->capability)) {
+            return;
+        }
+        foreach ($this->post_types as $post_type => $post_type_data) {
+            add_filter('bulk_actions-edit-' . $post_type, array(&$this, 'bulk_export_action'));
+            add_filter('handle_bulk_actions-edit-' . $post_type, array(&$this, 'bulk_export_handle'), 10, 3);
+        }
+    }
+
+    public function bulk_export_action($actions) {
+        $actions['wpu_import_export'] = __('Export', 'wpu_import_export');
+        return $actions;
+    }
+
+    public function bulk_export_handle($redirect_to, $action, $post_ids) {
+        if ($action !== 'wpu_import_export' || !current_user_can($this->capability)) {
+            return $redirect_to;
+        }
+        $post_ids = array_filter(array_map('intval', (array) $post_ids));
+        if (empty($post_ids)) {
+            return $redirect_to;
+        }
+
+        $screen = get_current_screen();
+        $post_type = $screen ? $screen->post_type : '';
+        if (!isset($this->post_types[$post_type])) {
+            return $redirect_to;
+        }
+
+        $posts = get_posts(array(
+            'post_type' => $post_type,
+            'include' => $post_ids,
+            'post_status' => 'any',
+            'numberposts' => -1
+        ));
+        if (empty($posts)) {
+            return $redirect_to;
+        }
+
+        $this->export_posts_to_csv($posts, $post_type, $this->post_types[$post_type]);
+        return $redirect_to;
+    }
+
     public function export_post_type($post_type, $post_type_data) {
         $args = array(
             'post_type' => $post_type,
@@ -648,6 +698,11 @@ class WPUImportExport {
             $this->set_message('export_empty', __('No posts found for export with the current filters.', 'wpu_import_export'), 'error');
             return;
         }
+        $this->export_posts_to_csv($posts, $post_type, $post_type_data);
+    }
+
+    /* Convert posts to CSV lines and stream the file (dies on output) */
+    public function export_posts_to_csv($posts, $post_type, $post_type_data) {
         $lines = array();
         foreach ($posts as $post) {
             $lines[] = $this->post_to_array($post, $post_type_data);
