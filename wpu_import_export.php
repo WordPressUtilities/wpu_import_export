@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.11.0
+Version: 0.11.1
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.11.0';
+    private $plugin_version = '0.11.1';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -152,11 +152,11 @@ class WPUImportExport {
         foreach ($unique_keys as $key => $post_types) {
             $fields[$key] = array(
                 'group' => 'wpu_import_export_' . $key,
-                'label' => 'Unique ID',
+                'label' => __('Unique ID', 'wpu_import_export'),
                 'readonly' => true
             );
             $field_groups['wpu_import_export_' . $key] = array(
-                'label' => 'Import - Export',
+                'label' => __('Import - Export', 'wpu_import_export'),
                 'post_types' => $post_types
             );
         }
@@ -508,7 +508,7 @@ class WPUImportExport {
 
     public function page_content__export() {
         if (empty($this->post_types)) {
-            $this->set_message('empty_post_types', __('No post types found', 'wpu_import_export'), 'error');
+            echo $this->display_message(__('No post types found', 'wpu_import_export'), 'error');
             return;
         }
 
@@ -911,7 +911,7 @@ class WPUImportExport {
     public function page_content__import() {
 
         if (empty($this->post_types)) {
-            $this->set_message('empty_post_types', __('No post types found', 'wpu_import_export'), 'error');
+            echo $this->display_message(__('No post types found', 'wpu_import_export'), 'error');
             return;
         }
 
@@ -969,7 +969,10 @@ class WPUImportExport {
             require_once ABSPATH . 'wp-admin/includes/file.php';
         }
         global $wp_filesystem;
-        WP_Filesystem();
+        if (!WP_Filesystem() || !$wp_filesystem) {
+            $this->set_message('filesystem_error', __('Unable to access the filesystem', 'wpu_import_export'), 'error');
+            return;
+        }
         $file_content = $wp_filesystem->get_contents($tmp_name);
         if (!$file_content) {
             $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
@@ -1365,6 +1368,13 @@ class WPUImportExport {
             return;
         }
         $this->messages->set_message($id, $message, $group);
+    }
+
+    public function display_message($message, $group = '') {
+        if (!$this->messages) {
+            return array();
+        }
+        return $this->messages->get_message_html($message, $group);
     }
 
 }

@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: WPU Import Export\n"
-"POT-Creation-Date: 2026-07-04 20:40+0200\n"
+"POT-Creation-Date: 2026-07-14 21:59+0200\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -97,7 +97,7 @@ msgstr "Le champ « %s » est obligatoire"
 msgid "The field “%s” should be an email"
 msgstr "Le champ « %s » doit contenir une adresse e-mail"
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:789
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:799
 #, php-format
 msgid ""
 "The plugin <b>%s</b> depends on the following plugins. Please install and "
@@ -106,7 +106,7 @@ msgstr ""
 "Le plugin <b>%s</b> nécessite les plugins suivants. Veuillez les installer "
 "et les activer :"
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:795
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:805
 #, php-format
 msgid ""
 "The plugin <b>%s</b> depends on the <b>%s</b> plugin. Please install and "
@@ -115,7 +115,7 @@ msgstr ""
 "Le plugin <b>%s</b> dépend du plugin <b>%s</b>. Merci de l’installer et de "
 "l’activer."
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:808
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:818
 #, php-format
 msgid ""
 "The plugin <b>%s</b> needs specific plugins versions. Please update them:"
@@ -123,7 +123,7 @@ msgstr ""
 "Le plugin <b>%s</b> nécessite des versions spécifiques de certains plugins. "
 "Veuillez les mettre à jour :"
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:815
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:825
 #, php-format
 msgid ""
 "The plugin <b>%s</b> needs a specific <b>%s</b> plugin version. Please "
@@ -133,126 +133,141 @@ msgstr ""
 "Veuillez le mettre à jour au moins jusqu'à la version %s (version actuelle : "
 "%s)."
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:861
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:871
 msgid "No data available."
 msgstr "Aucune donnée disponible."
 
-#: .././wpu_import_export.php:71
+#: .././wpu_import_export.php:75
 msgid "Simple import export"
 msgstr "Importation et exportation simplifiée"
 
-#: .././wpu_import_export.php:95 .././wpu_import_export.php:447
+#: .././wpu_import_export.php:99 .././wpu_import_export.php:523
+#: .././wpu_import_export.php:650
 msgid "Export"
 msgstr "Exporter"
 
-#: .././wpu_import_export.php:97
+#: .././wpu_import_export.php:101
 msgid "Settings"
 msgstr "Réglages"
 
-#: .././wpu_import_export.php:107
+#: .././wpu_import_export.php:111
 msgid "Import"
 msgstr "Importer"
 
-#: .././wpu_import_export.php:435 .././wpu_import_export.php:778
+#: .././wpu_import_export.php:155
+msgid "Unique ID"
+msgstr "Identifiant unique"
+
+#: .././wpu_import_export.php:159
+#, fuzzy
+#| msgid "Simple import export"
+msgid "Import - Export"
+msgstr "Importation et exportation simplifiée"
+
+#: .././wpu_import_export.php:511 .././wpu_import_export.php:914
 msgid "No post types found"
 msgstr "Aucun type de publication trouvé"
 
-#: .././wpu_import_export.php:456
+#: .././wpu_import_export.php:532
 msgid "Filters"
 msgstr "Filtres"
 
-#: .././wpu_import_export.php:489
+#: .././wpu_import_export.php:565
 msgid "Status"
 msgstr "Statut"
 
-#: .././wpu_import_export.php:501
+#: .././wpu_import_export.php:577
 msgid "Date"
 msgstr "Date"
 
-#: .././wpu_import_export.php:502
+#: .././wpu_import_export.php:578
 msgid "From"
 msgstr "De"
 
-#: .././wpu_import_export.php:504
+#: .././wpu_import_export.php:580
 msgid "To"
 msgstr "À"
 
-#: .././wpu_import_export.php:512
+#: .././wpu_import_export.php:588
 msgid "Language"
 msgstr "Langue"
 
-#: .././wpu_import_export.php:567
+#: .././wpu_import_export.php:698
 msgid "No posts found for export with the current filters."
 msgstr ""
 "Aucune publication ne correspond aux critères de filtrage actuels pour "
 "l'exportation."
 
-#: .././wpu_import_export.php:789
+#: .././wpu_import_export.php:925
 msgid "CSV File"
 msgstr "Fichier CSV"
 
-#: .././wpu_import_export.php:792
+#: .././wpu_import_export.php:928
 msgid "Upload File"
 msgstr "Télécharger un fichier"
 
-#: .././wpu_import_export.php:812
+#: .././wpu_import_export.php:948
 msgid "Invalid post"
 msgstr "Post invalide"
 
-#: .././wpu_import_export.php:818
+#: .././wpu_import_export.php:954
 msgid "Invalid file"
 msgstr "Fichier non valide"
 
-#: .././wpu_import_export.php:826
+#: .././wpu_import_export.php:962
 msgid "Invalid file type, please upload a CSV file"
 msgstr "Type de fichier non valide. Veuillez télécharger un fichier CSV"
 
-#: .././wpu_import_export.php:839 .././wpu_import_export.php:846
+#: .././wpu_import_export.php:973
+msgid "Unable to access the filesystem"
+msgstr "Impossible d'accéder au système de fichiers"
+
+#: .././wpu_import_export.php:978 .././wpu_import_export.php:985
 msgid "Invalid file content"
 msgstr "Contenu du fichier non valide"
 
-#: .././wpu_import_export.php:867
+#: .././wpu_import_export.php:1006
 #, php-format
 msgid "Lines processed: %d"
 msgstr "Lignes traitées : %d"
 
-#: .././wpu_import_export.php:871
+#: .././wpu_import_export.php:1010
 #, php-format
 msgid "1 new post created"
 msgid_plural "%d new posts created"
 msgstr[0] "1 publication créée"
 msgstr[1] "%s publications créées"
 
-#: .././wpu_import_export.php:875
+#: .././wpu_import_export.php:1014
 #, php-format
 msgid "1 post updated"
 msgid_plural "%d posts updated"
 msgstr[0] "1 publication mise à jour"
 msgstr[1] "%s publications mises à jour"
 
-#: .././wpu_import_export.php:878
+#: .././wpu_import_export.php:1017
 #, php-format
 msgid "1 post skipped"
 msgid_plural "%d posts skipped"
 msgstr[0] "1 publication ignorée"
 msgstr[1] "%s publications ignorées"
 
-#: .././wpu_import_export.php:881
+#: .././wpu_import_export.php:1020
 #, php-format
 msgid "1 error"
 msgid_plural "%d errors"
 msgstr[0] "1 erreur"
 msgstr[1] "%s erreurs"
 
-#: .././wpu_import_export.php:902
+#: .././wpu_import_export.php:1041
 msgid "Missing unique key"
 msgstr "Clé unique manquante"
 
-#: .././wpu_import_export.php:910
+#: .././wpu_import_export.php:1049
 msgid "Missing unique key value"
 msgstr "Valeur de clé unique manquante"
 
-#: .././wpu_import_export.php:1107
+#: .././wpu_import_export.php:1247
 #, php-format
 msgid "Unknown flexible layout \"%1$s\" for field \"%2$s\", block skipped"
 msgstr ""
