@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.11.1
+Version: 0.11.2
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.11.1';
+    private $plugin_version = '0.11.2';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -581,6 +581,12 @@ class WPUImportExport {
         echo '<input type="date" id="date_before_' . esc_attr($post_type) . '" name="filter[' . esc_attr($post_type) . '][date_before]" />';
         echo '</p>';
 
+        /* Search */
+        echo '<p>';
+        echo '<label class="wpu-import-export-label" for="search_' . esc_attr($post_type) . '">' . esc_html__('Search', 'wpu_import_export') . '</label>';
+        echo '<input type="text" id="search_' . esc_attr($post_type) . '" name="filter[' . esc_attr($post_type) . '][search]" />';
+        echo '</p>';
+
         /* Languages (Polylang) */
         $languages = $this->get_languages();
         if (count($languages) > 1 && $this->is_translated_post_type($post_type)) {
@@ -692,6 +698,10 @@ class WPUImportExport {
         if (!empty($lang)) {
             $args['lang'] = $lang;
         }
+        $search = $this->get_export_search($post_type);
+        if (!empty($search)) {
+            $args['s'] = $search;
+        }
 
         $posts = get_posts($args);
         if (empty($posts)) {
@@ -766,6 +776,12 @@ class WPUImportExport {
             }
         }
         return implode(',', $langs);
+    }
+
+    /* Get sanitized search string from posted filters (WP_Query 's': title, content, excerpt) */
+    public function get_export_search($post_type) {
+        $posted = isset($_POST['filter'][$post_type]['search']) ? sanitize_text_field(wp_unslash($_POST['filter'][$post_type]['search'])) : '';
+        return trim($posted);
     }
 
     /* Build a tax_query from posted filters */
