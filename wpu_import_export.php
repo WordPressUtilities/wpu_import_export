@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.11.2
+Version: 0.11.3
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.11.2';
+    private $plugin_version = '0.11.3';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -996,7 +996,9 @@ class WPUImportExport {
         }
 
         /* Parse file content */
-        $lines = $this->basetoolbox->csv_to_array($file_content);
+        $lines = $this->basetoolbox->csv_to_array($file_content, array(
+            'sanitize_column_names' => true,
+        ));
         if (count($lines) < 1) {
             $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
             return;
