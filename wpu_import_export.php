@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.11.3
+Version: 0.11.4
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.11.3';
+    private $plugin_version = '0.11.4';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -997,7 +997,7 @@ class WPUImportExport {
 
         /* Parse file content */
         $lines = $this->basetoolbox->csv_to_array($file_content, array(
-            'sanitize_column_names' => true,
+            'sanitize_column_names' => true
         ));
         if (count($lines) < 1) {
             $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
@@ -1049,6 +1049,7 @@ class WPUImportExport {
 
     /* Create or update a post */
     public function create_or_update_post($post_type, $line) {
+
         /* Get unique key */
         $post_type_data = $this->post_types[$post_type];
         if (!$post_type_data) {
@@ -1305,41 +1306,55 @@ class WPUImportExport {
     public function save_repeater_meta($post_id, $column_data, $value) {
         $meta_key = $column_data['meta_key'];
         $sub_fields = $column_data['sub_fields'];
+        $rows = array();
 
         if ($column_data['format'] === 'newline') {
-            $rows = array_values(array_filter(explode("\n", $value), function ($v) {
-                return trim($v) !== '';
-            }));
-            $old_count = (int) get_post_meta($post_id, $meta_key, true);
-            for ($i = count($rows); $i < $old_count; $i++) {
-                foreach ($sub_fields as $sub_field) {
-                    delete_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field);
+            $value = str_replace(array("\r\n", "\r"), "\n", $value);
+            foreach (explode("\n", $value) as $line_value) {
+                if (trim($line_value) === '') {
+                    continue;
                 }
-            }
-            update_post_meta($post_id, $meta_key, count($rows));
-            foreach ($rows as $i => $row_value) {
-                update_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_fields[0], $row_value);
+                $rows[] = array($sub_fields[0] => $line_value);
             }
         }
+
         if ($column_data['format'] === 'columns') {
             // $value is the full CSV $line array
-            $max = $column_data['max'];
-            $count = 0;
-            for ($i = 0; $i < $max; $i++) {
+            for ($i = 0; $i < $column_data['max']; $i++) {
+                $row = array();
                 $row_has_value = false;
                 foreach ($sub_fields as $sub_field) {
                     $csv_key = $meta_key . '_' . $i . '_' . $sub_field;
-                    $val = isset($value[$csv_key]) ? $value[$csv_key] : '';
-                    update_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field, $val);
-                    if (trim($val) !== '') {
+                    $row[$sub_field] = isset($value[$csv_key]) ? $value[$csv_key] : '';
+                    if (trim($row[$sub_field]) !== '') {
                         $row_has_value = true;
                     }
                 }
                 if ($row_has_value) {
-                    $count = $i + 1;
+                    $rows[] = $row;
                 }
             }
-            update_post_meta($post_id, $meta_key, $count);
+        }
+
+        // Delete stale rows from a previous, longer import
+        $old_count = (int) get_post_meta($post_id, $meta_key, true);
+        for ($i = count($rows); $i < $old_count; $i++) {
+            foreach ($sub_fields as $sub_field) {
+                delete_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field);
+            }
+        }
+
+        // ACF field key reference, so the repeater is editable in the admin
+        if (isset($column_data['acf_field_name'])) {
+            update_post_meta($post_id, '_' . $meta_key, $column_data['acf_field_name']);
+        }
+
+        // Count meta
+        update_post_meta($post_id, $meta_key, count($rows));
+        foreach ($rows as $i => $row) {
+            foreach ($row as $sub_field => $sub_value) {
+                update_post_meta($post_id, $meta_key . '_' . $i . '_' . $sub_field, $sub_value);
+            }
         }
     }
 
