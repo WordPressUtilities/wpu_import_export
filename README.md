@@ -9,6 +9,7 @@ add_filter( 'wpu_import_export_post_types', function( $post_types ) {
     $post_types['post'] = [
         'post_type' => 'post',
         'unique_key' => 'uniqid', // Post meta holding the unique key, optional, defaults to 'uniqid'
+        'unique_key_accepted_columns' => ['sku', 'ref'], // Alternative CSV header names accepted for the unique key on import, optional
         'load_post_data' => true, // Automatically load columns from post object, optional, defaults to false
         'columns' => []
     ];

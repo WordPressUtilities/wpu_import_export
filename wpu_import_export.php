@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.11.4
+Version: 0.11.5
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.11.4';
+    private $plugin_version = '0.11.5';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -312,6 +312,16 @@ class WPUImportExport {
         }
         /* Build default data */
         $post_type_data['unique_key'] = isset($post_type_data['unique_key']) ? $post_type_data['unique_key'] : 'uniqid';
+
+        /* Normalize accepted columns for the unique key (CSV header aliases for import) */
+        $unique_key_accepted_columns = isset($post_type_data['unique_key_accepted_columns']) ? $post_type_data['unique_key_accepted_columns'] : array();
+        if (!is_array($unique_key_accepted_columns)) {
+            $unique_key_accepted_columns = array($unique_key_accepted_columns);
+        }
+        $post_type_data['unique_key_accepted_columns'] = array_map(function ($name) {
+            return strtolower(trim($name));
+        }, $unique_key_accepted_columns);
+
         $post_type_data['columns'] = isset($post_type_data['columns']) && is_array($post_type_data['columns']) ? $post_type_data['columns'] : array();
 
         /* Load post data */
@@ -1061,7 +1071,9 @@ class WPUImportExport {
             $this->import_details['skipped']++;
             return;
         }
-        $unique_key_value = isset($line[$unique_key]) && $line[$unique_key] !== '' ? $line[$unique_key] : null;
+        $unique_key_value = $this->get_line_value($line, $unique_key, array(
+            'accepted_columns' => isset($post_type_data['unique_key_accepted_columns']) ? $post_type_data['unique_key_accepted_columns'] : array()
+        ));
         $allow_create_without_key = !empty($post_type_data['allow_create_without_key']);
         if (!$unique_key_value) {
             if (!$allow_create_without_key) {
