@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.11.5
+Version: 0.12.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.11.5';
+    private $plugin_version = '0.12.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -981,53 +981,14 @@ class WPUImportExport {
             return;
         }
 
-        /* Validate file extension & MIME type (CSV only) */
+        /* Validate & parse file : the uploaded name carries the extension, not the tmp path */
         $file_name = isset($_FILES[$file_key]['name']) ? sanitize_file_name($_FILES[$file_key]['name']) : '';
-        $filetype = wp_check_filetype($file_name, array('csv' => 'text/csv', 'txt' => 'text/plain'));
-        if (!$filetype['ext']) {
-            $this->set_message('invalid_file_type', __('Invalid file type, please upload a CSV file', 'wpu_import_export'), 'error');
+        $lines = $this->get_lines_from_csv_file($_FILES[$file_key]['tmp_name'], $file_name);
+        if (is_wp_error($lines)) {
+            $this->set_message($lines->get_error_code(), $lines->get_error_message(), 'error');
             return;
         }
-
-        /* Get file content through WP_Filesystem */
-        $tmp_name = $_FILES[$file_key]['tmp_name'];
-        if (!function_exists('WP_Filesystem')) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-        }
-        global $wp_filesystem;
-        if (!WP_Filesystem() || !$wp_filesystem) {
-            $this->set_message('filesystem_error', __('Unable to access the filesystem', 'wpu_import_export'), 'error');
-            return;
-        }
-        $file_content = $wp_filesystem->get_contents($tmp_name);
-        if (!$file_content) {
-            $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
-            return;
-        }
-
-        /* Parse file content */
-        $lines = $this->basetoolbox->csv_to_array($file_content, array(
-            'sanitize_column_names' => true
-        ));
-        if (count($lines) < 1) {
-            $this->set_message('invalid_file_content', __('Invalid file content', 'wpu_import_export'), 'error');
-            return;
-        }
-        $this->import_details = array(
-            'new' => 0,
-            'updated' => 0,
-            'skipped' => 0,
-            'error' => 0
-        );
-
-        /* Pass 1: create/update posts, assign language, accumulate translation groups */
-        $this->translation_groups = array();
-        foreach ($lines as $line) {
-            $post_id = $this->create_or_update_post($post_type, $line);
-            $this->collect_translation_group($post_type, $line, $post_id);
-        }
-        /* Pass 2: link translations (all posts now exist) */
-        $this->link_translations();
+        $this->import_lines($post_type, $lines);
 
         $message_type = 'error';
         $details_text = array(
@@ -1056,6 +1017,66 @@ class WPUImportExport {
     /* ----------------------------------------------------------
       HELPERS
     ---------------------------------------------------------- */
+
+    /* Validate a CSV file and return its parsed lines, or a WP_Error */
+    public function get_lines_from_csv_file($file_path, $file_name = '') {
+
+        if (!$file_name) {
+            $file_name = basename($file_path);
+        }
+
+        /* Validate file extension & MIME type (CSV only) */
+        $filetype = wp_check_filetype($file_name, array('csv' => 'text/csv', 'txt' => 'text/plain'));
+        if (!$filetype['ext']) {
+            return new WP_Error('invalid_file_type', __('Invalid file type, please upload a CSV file', 'wpu_import_export'));
+        }
+
+        /* Get file content through WP_Filesystem */
+        if (!function_exists('WP_Filesystem')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        global $wp_filesystem;
+        if (!WP_Filesystem() || !$wp_filesystem) {
+            return new WP_Error('filesystem_error', __('Unable to access the filesystem', 'wpu_import_export'));
+        }
+        $file_content = $wp_filesystem->get_contents($file_path);
+        if (!$file_content) {
+            return new WP_Error('invalid_file_content', __('Invalid file content', 'wpu_import_export'));
+        }
+
+        /* Parse file content */
+        $lines = $this->basetoolbox->csv_to_array($file_content, array(
+            'sanitize_column_names' => true
+        ));
+        if (count($lines) < 1) {
+            return new WP_Error('invalid_file_content', __('Invalid file content', 'wpu_import_export'));
+        }
+
+        return $lines;
+    }
+
+    /* Import parsed CSV lines : two passes, returns import details */
+    public function import_lines($post_type, $lines) {
+
+        $this->import_details = array(
+            'new' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'error' => 0
+        );
+
+        /* Pass 1: create/update posts, assign language, accumulate translation groups */
+        $this->translation_groups = array();
+        foreach ($lines as $line) {
+            $post_id = $this->create_or_update_post($post_type, $line);
+            $this->collect_translation_group($post_type, $line, $post_id);
+            do_action('wpu_import_export_line_imported', $post_id, $post_type, $line);
+        }
+        /* Pass 2: link translations (all posts now exist) */
+        $this->link_translations();
+
+        return $this->import_details;
+    }
 
     /* Create or update a post */
     public function create_or_update_post($post_type, $line) {
@@ -1406,6 +1427,11 @@ class WPUImportExport {
         return $post ? $post[0] : null;
     }
 
+    /* Get registered post types config */
+    public function get_post_types() {
+        return $this->post_types;
+    }
+
     /* Add a message */
     public function set_message($id, $message, $group = '') {
         if (!$this->messages) {
@@ -1424,4 +1450,10 @@ class WPUImportExport {
 
 }
 
+/* Explicit global : WP-CLI loads wp-settings.php from within a method scope */
+global $WPUImportExport;
 $WPUImportExport = new WPUImportExport();
+
+if (defined('WP_CLI') && WP_CLI) {
+    require_once __DIR__ . '/inc/cli.php';
+}
