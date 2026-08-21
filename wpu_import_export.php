@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.12.0
+Version: 0.13.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.12.0';
+    private $plugin_version = '0.13.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -380,6 +380,7 @@ class WPUImportExport {
                     unset($post_type_data['columns'][$column_name]);
                     continue;
                 }
+                $post_type_data['columns'][$column_name]['create_terms'] = isset($column_data['create_terms']) ? (bool) $column_data['create_terms'] : false;
             }
             if ($post_type_data['columns'][$column_name]['type'] === 'acf_flexible_block') {
                 $post_type_data['columns'][$column_name]['field'] = isset($column_data['field']) ? $column_data['field'] : 'content-blocks';
@@ -1005,6 +1006,9 @@ class WPUImportExport {
         if ($this->import_details['skipped']) {
             $details_text[] = sprintf(_n('1 post skipped', '%d posts skipped', $this->import_details['skipped'], 'wpu_import_export'), $this->import_details['skipped']);
         }
+        if ($this->import_details['terms_created']) {
+            $details_text[] = sprintf(_n('1 term created', '%d terms created', $this->import_details['terms_created'], 'wpu_import_export'), $this->import_details['terms_created']);
+        }
         if ($this->import_details['error']) {
             $details_text[] = sprintf(_n('1 error', '%d errors', $this->import_details['error'], 'wpu_import_export'), $this->import_details['error']);
         }
@@ -1057,12 +1061,12 @@ class WPUImportExport {
 
     /* Import parsed CSV lines : two passes, returns import details */
     public function import_lines($post_type, $lines) {
-
-        $this->import_details = array(
+          $this->import_details = array(
             'new' => 0,
             'updated' => 0,
             'skipped' => 0,
-            'error' => 0
+            'error' => 0,
+            'terms_created' => 0
         );
 
         /* Pass 1: create/update posts, assign language, accumulate translation groups */
@@ -1185,13 +1189,21 @@ class WPUImportExport {
                 if ($value === null) {
                     continue;
                 }
-                $slugs = array_filter(array_map('trim', explode(',', $value)));
+                $names = array_filter(array_map('trim', explode(',', $value)));
                 $term_ids = array();
-                foreach ($slugs as $slug) {
-                    $term = get_term_by('slug', $slug, $column_data['taxonomy']);
-                    if ($term) {
-                        $term_ids[] = $term->term_id;
+                foreach ($names as $name) {
+                    /* term_exists() matches both the slug and the name */
+                    $term = term_exists($name, $column_data['taxonomy']);
+                    if (!$term && $column_data['create_terms']) {
+                        $term = wp_insert_term($name, $column_data['taxonomy']);
+                        if (!is_wp_error($term)) {
+                            $this->import_details['terms_created']++;
+                        }
                     }
+                    if (!$term || is_wp_error($term)) {
+                        continue;
+                    }
+                    $term_ids[] = (int) $term['term_id'];
                 }
                 wp_set_post_terms($post_id, $term_ids, $column_data['taxonomy']);
             }

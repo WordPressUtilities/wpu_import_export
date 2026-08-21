@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: WPU Import Export\n"
-"POT-Creation-Date: 2026-07-26 22:19+0200\n"
+"POT-Creation-Date: 2026-08-21 22:13+0200\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -27,7 +27,7 @@ msgstr ""
 "X-Poedit-SearchPathExcluded-8: inc/WPUBaseToolbox\n"
 "X-Poedit-SearchPathExcluded-9: inc/WPUBaseUpdate\n"
 
-#: .././inc/WPUBaseAdminPage/WPUBaseAdminPage.php:202
+#: .././inc/WPUBaseAdminPage/WPUBaseAdminPage.php:203
 msgid "Help"
 msgstr "Aide"
 
@@ -97,7 +97,7 @@ msgstr "Le champ « %s » est obligatoire"
 msgid "The field “%s” should be an email"
 msgstr "Le champ « %s » doit contenir une adresse e-mail"
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:799
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:814
 #, php-format
 msgid ""
 "The plugin <b>%s</b> depends on the following plugins. Please install and "
@@ -106,7 +106,7 @@ msgstr ""
 "Le plugin <b>%s</b> nécessite les plugins suivants. Veuillez les installer "
 "et les activer :"
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:805
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:820
 #, php-format
 msgid ""
 "The plugin <b>%s</b> depends on the <b>%s</b> plugin. Please install and "
@@ -115,7 +115,7 @@ msgstr ""
 "Le plugin <b>%s</b> dépend du plugin <b>%s</b>. Merci de l’installer et de "
 "l’activer."
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:818
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:833
 #, php-format
 msgid ""
 "The plugin <b>%s</b> needs specific plugins versions. Please update them:"
@@ -123,7 +123,7 @@ msgstr ""
 "Le plugin <b>%s</b> nécessite des versions spécifiques de certains plugins. "
 "Veuillez les mettre à jour :"
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:825
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:840
 #, php-format
 msgid ""
 "The plugin <b>%s</b> needs a specific <b>%s</b> plugin version. Please "
@@ -133,7 +133,7 @@ msgstr ""
 "Veuillez le mettre à jour au moins jusqu'à la version %s (version actuelle : "
 "%s)."
 
-#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:871
+#: .././inc/WPUBaseToolbox/WPUBaseToolbox.php:886
 msgid "No data available."
 msgstr "Aucune donnée disponible."
 
@@ -141,8 +141,8 @@ msgstr "Aucune donnée disponible."
 msgid "Simple import export"
 msgstr "Importation et exportation simplifiée"
 
-#: .././wpu_import_export.php:99 .././wpu_import_export.php:523
-#: .././wpu_import_export.php:656
+#: .././wpu_import_export.php:99 .././wpu_import_export.php:534
+#: .././wpu_import_export.php:667
 msgid "Export"
 msgstr "Exporter"
 
@@ -164,114 +164,121 @@ msgstr "Identifiant unique"
 msgid "Import - Export"
 msgstr "Importation et exportation simplifiée"
 
-#: .././wpu_import_export.php:511 .././wpu_import_export.php:930
+#: .././wpu_import_export.php:522 .././wpu_import_export.php:941
 msgid "No post types found"
 msgstr "Aucun type de publication trouvé"
 
-#: .././wpu_import_export.php:532
+#: .././wpu_import_export.php:543
 msgid "Filters"
 msgstr "Filtres"
 
-#: .././wpu_import_export.php:565
+#: .././wpu_import_export.php:576
 msgid "Status"
 msgstr "Statut"
 
-#: .././wpu_import_export.php:577
+#: .././wpu_import_export.php:588
 msgid "Date"
 msgstr "Date"
 
-#: .././wpu_import_export.php:578
+#: .././wpu_import_export.php:589
 msgid "From"
 msgstr "De"
 
-#: .././wpu_import_export.php:580
+#: .././wpu_import_export.php:591
 msgid "To"
 msgstr "À"
 
-#: .././wpu_import_export.php:586
+#: .././wpu_import_export.php:597
 msgid "Search"
 msgstr "Recherche"
 
-#: .././wpu_import_export.php:594
+#: .././wpu_import_export.php:605
 msgid "Language"
 msgstr "Langue"
 
-#: .././wpu_import_export.php:708
+#: .././wpu_import_export.php:719
 msgid "No posts found for export with the current filters."
 msgstr ""
 "Aucune publication ne correspond aux critères de filtrage actuels pour "
 "l'exportation."
 
-#: .././wpu_import_export.php:941
+#: .././wpu_import_export.php:952
 msgid "CSV File"
 msgstr "Fichier CSV"
 
-#: .././wpu_import_export.php:944
+#: .././wpu_import_export.php:955
 msgid "Upload File"
 msgstr "Télécharger un fichier"
 
-#: .././wpu_import_export.php:964
+#: .././wpu_import_export.php:975
 msgid "Invalid post"
 msgstr "Post invalide"
 
-#: .././wpu_import_export.php:970
+#: .././wpu_import_export.php:981
 msgid "Invalid file"
 msgstr "Fichier non valide"
 
-#: .././wpu_import_export.php:978
-msgid "Invalid file type, please upload a CSV file"
-msgstr "Type de fichier non valide. Veuillez télécharger un fichier CSV"
-
-#: .././wpu_import_export.php:989
-msgid "Unable to access the filesystem"
-msgstr "Impossible d'accéder au système de fichiers"
-
-#: .././wpu_import_export.php:994 .././wpu_import_export.php:1001
-msgid "Invalid file content"
-msgstr "Contenu du fichier non valide"
-
-#: .././wpu_import_export.php:1022
+#: .././wpu_import_export.php:996
 #, php-format
 msgid "Lines processed: %d"
 msgstr "Lignes traitées : %d"
 
-#: .././wpu_import_export.php:1026
+#: .././wpu_import_export.php:1000
 #, php-format
 msgid "1 new post created"
 msgid_plural "%d new posts created"
 msgstr[0] "1 publication créée"
 msgstr[1] "%s publications créées"
 
-#: .././wpu_import_export.php:1030
+#: .././wpu_import_export.php:1004
 #, php-format
 msgid "1 post updated"
 msgid_plural "%d posts updated"
 msgstr[0] "1 publication mise à jour"
 msgstr[1] "%s publications mises à jour"
 
-#: .././wpu_import_export.php:1033
+#: .././wpu_import_export.php:1007
 #, php-format
 msgid "1 post skipped"
 msgid_plural "%d posts skipped"
 msgstr[0] "1 publication ignorée"
 msgstr[1] "%s publications ignorées"
 
-#: .././wpu_import_export.php:1036
+#: .././wpu_import_export.php:1010
+#, php-format
+msgid "1 term created"
+msgid_plural "%d terms created"
+msgstr[0] "1 terme créé"
+msgstr[1] "%s termes créés"
+
+#: .././wpu_import_export.php:1013
 #, php-format
 msgid "1 error"
 msgid_plural "%d errors"
 msgstr[0] "1 erreur"
 msgstr[1] "%s erreurs"
 
-#: .././wpu_import_export.php:1057
+#: .././wpu_import_export.php:1035
+msgid "Invalid file type, please upload a CSV file"
+msgstr "Type de fichier non valide. Veuillez télécharger un fichier CSV"
+
+#: .././wpu_import_export.php:1044
+msgid "Unable to access the filesystem"
+msgstr "Impossible d'accéder au système de fichiers"
+
+#: .././wpu_import_export.php:1048 .././wpu_import_export.php:1056
+msgid "Invalid file content"
+msgstr "Contenu du fichier non valide"
+
+#: .././wpu_import_export.php:1095
 msgid "Missing unique key"
 msgstr "Clé unique manquante"
 
-#: .././wpu_import_export.php:1065
+#: .././wpu_import_export.php:1105
 msgid "Missing unique key value"
 msgstr "Valeur de clé unique manquante"
 
-#: .././wpu_import_export.php:1263
+#: .././wpu_import_export.php:1311
 #, php-format
 msgid "Unknown flexible layout \"%1$s\" for field \"%2$s\", block skipped"
 msgstr ""

@@ -35,7 +35,8 @@ add_filter( 'wpu_import_export_post_types', function( $post_types ) {
             ],
             'categories'    => [
                 'type'     => 'taxonomy',
-                'taxonomy' => 'category', // Required. Cell holds comma-separated term slugs
+                'taxonomy' => 'category', // Required. Cell holds comma-separated term names or slugs
+                'create_terms' => false, // Optional. Create missing terms instead of ignoring them
             ],
             'speakers'      => [
                 'type'       => 'repeater',

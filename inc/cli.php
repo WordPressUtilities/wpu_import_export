@@ -60,12 +60,13 @@ class WPUImportExportCLI {
         $details = $WPUImportExport->import_lines($post_type, $lines);
         $progress->finish();
 
-        $summary = sprintf('%d lines processed: %d created, %d updated, %d skipped, %d errors',
+        $summary = sprintf('%d lines processed: %d created, %d updated, %d skipped, %d errors, %d terms created',
             count($lines),
             $details['new'],
             $details['updated'],
             $details['skipped'],
-            $details['error']
+            $details['error'],
+            $details['terms_created']
         );
 
         if ($details['error']) {
