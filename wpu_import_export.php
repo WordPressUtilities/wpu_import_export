@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.13.0
+Version: 0.13.1
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.13.0';
+    private $plugin_version = '0.13.1';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -39,6 +39,9 @@ class WPUImportExport {
     private $translation_groups = array();
     private $languages_cache;
     private $translated_post_types_cache = array();
+    private $post_ids_by_key;
+    /* Statuses a unique key can be resolved against (excludes trash & auto-draft) */
+    public $lookup_post_statuses = array('publish', 'draft', 'pending', 'future', 'private');
     public function __construct() {
         add_action('init', array(&$this, 'load_translation'));
         add_action('init', array(&$this, 'load_toolbox'));
@@ -1069,6 +1072,9 @@ class WPUImportExport {
             'terms_created' => 0
         );
 
+        /* Resolve every existing unique key up front: one query instead of one per line */
+        $this->preload_post_ids_by_key($post_type);
+
         /* Pass 1: create/update posts, assign language, accumulate translation groups */
         $this->translation_groups = array();
         foreach ($lines as $line) {
@@ -1079,6 +1085,9 @@ class WPUImportExport {
         /* Pass 2: link translations (all posts now exist) */
         $this->link_translations();
 
+        /* Drop the map: outside of an import, get_post_by_key() must hit the database */
+        $this->post_ids_by_key = null;
+
         return $this->import_details;
     }
 
@@ -1086,15 +1095,15 @@ class WPUImportExport {
     public function create_or_update_post($post_type, $line) {
 
         /* Get unique key */
-        $post_type_data = $this->post_types[$post_type];
-        if (!$post_type_data) {
-            return;
+        if (!isset($this->post_types[$post_type])) {
+            return false;
         }
-        $unique_key = $post_type_data['unique_key'];
+        $post_type_data = $this->post_types[$post_type];
+        $unique_key = isset($post_type_data['unique_key']) ? $post_type_data['unique_key'] : '';
         if (!$unique_key) {
             $this->set_message('missing_unique_key', __('Missing unique key', 'wpu_import_export'), 'error');
             $this->import_details['skipped']++;
-            return;
+            return false;
         }
         $unique_key_value = $this->get_line_value($line, $unique_key, array(
             'accepted_columns' => isset($post_type_data['unique_key_accepted_columns']) ? $post_type_data['unique_key_accepted_columns'] : array()
@@ -1104,7 +1113,7 @@ class WPUImportExport {
             if (!$allow_create_without_key) {
                 $this->set_message('missing_unique_key_value', __('Missing unique key value', 'wpu_import_export'), 'error');
                 $this->import_details['skipped']++;
-                return;
+                return false;
             }
         }
         $post_id = $unique_key_value ? $this->get_post_by_key($post_type, $unique_key, $unique_key_value) : false;
@@ -1167,6 +1176,10 @@ class WPUImportExport {
             $this->import_details['new']++;
             if (!$unique_key_value) {
                 $post_metas[$unique_key] = $this->get_post_unique_key($post_id, $unique_key);
+            }
+            /* Keep the map in sync: a later line may reference the post just created */
+            if (is_array($this->post_ids_by_key) && isset($post_metas[$unique_key])) {
+                $this->post_ids_by_key[$post_metas[$unique_key]] = $post_id;
             }
 
         } else {
@@ -1309,8 +1322,8 @@ class WPUImportExport {
                 $this->set_message('invalid_flexible_layout', sprintf(
                     /* translators: 1: layout name, 2: field name */
                     __('Unknown flexible layout "%1$s" for field "%2$s", block skipped', 'wpu_import_export'),
-                    isset($row['acf_fc_layout']) ? $row['acf_fc_layout'] : '',
-                    $field
+                    esc_html(isset($row['acf_fc_layout']) ? $row['acf_fc_layout'] : ''),
+                    esc_html($field)
                 ), 'error');
                 unset($rows[$i]);
             }
@@ -1421,7 +1434,48 @@ class WPUImportExport {
         return null;
     }
 
+    /* Load every unique key of a post type in a single query, so an import does not run
+       one meta_query per CSV line. Newest post wins on duplicates, matching get_posts(). */
+    private function preload_post_ids_by_key($post_type) {
+        global $wpdb;
+
+        $this->post_ids_by_key = array();
+        $unique_key = isset($this->post_types[$post_type]['unique_key']) ? $this->post_types[$post_type]['unique_key'] : '';
+        if (!$unique_key) {
+            return;
+        }
+
+        $statuses = $this->lookup_post_statuses;
+        $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT pm.meta_value AS unique_value, pm.post_id AS post_id
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = %s
+               AND p.post_type = %s
+               AND p.post_status IN ({$placeholders})
+             ORDER BY p.post_date DESC, p.ID DESC",
+            array_merge(array($unique_key, $post_type), $statuses)
+        ));
+        if (!is_array($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            /* First row wins: the result set is already ordered like get_posts() */
+            if ($row->unique_value === '' || isset($this->post_ids_by_key[$row->unique_value])) {
+                continue;
+            }
+            $this->post_ids_by_key[$row->unique_value] = (int) $row->post_id;
+        }
+    }
+
     public function get_post_by_key($post_type, $key, $value) {
+        /* Served from the map while an import is running */
+        if (is_array($this->post_ids_by_key)) {
+            return isset($this->post_ids_by_key[$value]) ? $this->post_ids_by_key[$value] : null;
+        }
+
         $post = get_posts(array(
             'post_type' => $post_type,
             'meta_query' => array(
@@ -1432,7 +1486,7 @@ class WPUImportExport {
                 )
             ),
             'fields' => 'ids',
-            'post_status' => array('publish', 'draft', 'pending', 'future', 'private'),
+            'post_status' => $this->lookup_post_statuses,
             'numberposts' => 1
         ));
 
@@ -1455,7 +1509,7 @@ class WPUImportExport {
 
     public function display_message($message, $group = '') {
         if (!$this->messages) {
-            return array();
+            return '';
         }
         return $this->messages->get_message_html($message, $group);
     }
