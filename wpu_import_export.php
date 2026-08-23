@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.13.1
+Version: 0.14.0
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,12 +21,12 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.13.1';
+    private $plugin_version = '0.14.0';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
     );
-    private $basetoolbox;
+    public $basetoolbox;
     private $capability = 'manage_options';
     private $messages;
     private $adminpages;
@@ -700,7 +700,8 @@ class WPUImportExport {
         return $redirect_to;
     }
 
-    public function export_post_type($post_type, $post_type_data) {
+    /* Build get_posts() args from the posted export filters */
+    public function get_export_query_args($post_type) {
         $args = array(
             'post_type' => $post_type,
             'numberposts' => -1,
@@ -708,16 +709,17 @@ class WPUImportExport {
             'tax_query' => $this->get_export_tax_query($post_type),
             'date_query' => $this->get_export_date_query($post_type)
         );
-        $lang = $this->get_export_lang($post_type);
-        if (!empty($lang)) {
-            $args['lang'] = $lang;
-        }
+        /* Always set 'lang' : an empty string neutralizes Polylang's current-language default */
+        $args['lang'] = $this->get_export_lang($post_type);
         $search = $this->get_export_search($post_type);
         if (!empty($search)) {
             $args['s'] = $search;
         }
+        return $args;
+    }
 
-        $posts = get_posts($args);
+    public function export_post_type($post_type, $post_type_data) {
+        $posts = get_posts($this->get_export_query_args($post_type));
         if (empty($posts)) {
             $this->set_message('export_empty', __('No posts found for export with the current filters.', 'wpu_import_export'), 'error');
             return;
@@ -725,13 +727,18 @@ class WPUImportExport {
         $this->export_posts_to_csv($posts, $post_type, $post_type_data);
     }
 
-    /* Convert posts to CSV lines and stream the file (dies on output) */
-    public function export_posts_to_csv($posts, $post_type, $post_type_data) {
+    /* Convert posts to exportable CSV lines */
+    public function get_export_lines($posts, $post_type, $post_type_data) {
         $lines = array();
         foreach ($posts as $post) {
             $lines[] = $this->post_to_array($post, $post_type_data);
         }
-        $lines = apply_filters('wpu_import_export_export_lines', $lines, $post_type, $post_type_data);
+        return apply_filters('wpu_import_export_export_lines', $lines, $post_type, $post_type_data);
+    }
+
+    /* Convert posts to CSV lines and stream the file (dies on output) */
+    public function export_posts_to_csv($posts, $post_type, $post_type_data) {
+        $lines = $this->get_export_lines($posts, $post_type, $post_type_data);
         $this->basetoolbox->export_array_to_csv($lines, $post_type);
     }
 
@@ -760,6 +767,11 @@ class WPUImportExport {
         return empty($statuses) ? array('publish') : $statuses;
     }
 
+    /* Whether a string is a valid export filter date (YYYY-MM-DD) */
+    public function is_valid_export_date($date) {
+        return (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $date);
+    }
+
     /* Build a date_query from posted filters */
     public function get_export_date_query($post_type) {
         $posted = isset($_POST['filter'][$post_type]) ? $_POST['filter'][$post_type] : array();
@@ -767,11 +779,11 @@ class WPUImportExport {
         $before = isset($posted['date_before']) ? sanitize_text_field($posted['date_before']) : '';
 
         $date_query = array();
-        if ($after && preg_match('/^\d{4}-\d{2}-\d{2}$/', $after)) {
+        if ($after && $this->is_valid_export_date($after)) {
             $date_query['after'] = $after . ' 00:00:00';
             $date_query['inclusive'] = true;
         }
-        if ($before && preg_match('/^\d{4}-\d{2}-\d{2}$/', $before)) {
+        if ($before && $this->is_valid_export_date($before)) {
             $date_query['before'] = $before . ' 23:59:59';
             $date_query['inclusive'] = true;
         }
