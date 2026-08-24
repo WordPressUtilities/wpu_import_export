@@ -42,7 +42,7 @@ add_filter( 'wpu_import_export_post_types', function( $post_types ) {
                 'type'       => 'repeater',
                 'meta_key'   => 'speakers', // optional, defaults to column name
                 'sub_fields' => ['name', 'role'], // Required. ACF-style repeater sub fields
-                'format'     => 'indexed', // 'indexed' (one cell), 'newline' (one value per line) or 'columns', optional
+                'format'     => 'newline', // Required. 'newline' (one value per line, first sub field only) or 'columns'
                 'max'        => 5, // Required with format 'columns' only: number of generated columns
             ],
             'blocks'        => [

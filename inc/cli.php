@@ -121,10 +121,9 @@ class WPUImportExportCLI {
             }
         }
 
-        /* The plugin reads export filters from $_POST : fill it from the CLI flags */
-        $_POST['filter'][$post_type] = $this->build_export_filter($assoc_args);
+        $filters = $this->build_export_filter($assoc_args);
 
-        $posts = get_posts($WPUImportExport->get_export_query_args($post_type));
+        $posts = get_posts($WPUImportExport->get_export_query_args($post_type, $filters));
         if (empty($posts)) {
             WP_CLI::error('No posts found for export with the current filters.');
         }
@@ -137,7 +136,15 @@ class WPUImportExportCLI {
             return;
         }
 
-        if (file_put_contents($file, $csv) === false) {
+        /* Same filesystem abstraction as the import side */
+        if (!function_exists('WP_Filesystem')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        global $wp_filesystem;
+        if (!WP_Filesystem() || !$wp_filesystem) {
+            WP_CLI::error('Unable to access the filesystem.');
+        }
+        if (!$wp_filesystem->put_contents($file, $csv)) {
             WP_CLI::error(sprintf('Could not write "%s".', $file));
         }
         WP_CLI::success(sprintf('%d posts exported to %s', count($posts), $file));
@@ -154,7 +161,7 @@ class WPUImportExportCLI {
         return $post_types[$post_type];
     }
 
-    /* Build the $_POST filter array expected by the export methods */
+    /* Build the filter array expected by get_export_query_args() */
     private function build_export_filter($assoc_args) {
         global $WPUImportExport;
 
@@ -183,8 +190,7 @@ class WPUImportExportCLI {
         }
 
         if (!empty($assoc_args['search'])) {
-            /* Mirror the slashed $_POST WordPress builds on web requests */
-            $filter['search'] = wp_slash($assoc_args['search']);
+            $filter['search'] = $assoc_args['search'];
         }
 
         if (!empty($assoc_args['tax'])) {

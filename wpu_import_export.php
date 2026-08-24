@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.14.0
+Version: 0.14.1
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.14.0';
+    private $plugin_version = '0.14.1';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -42,6 +42,8 @@ class WPUImportExport {
     private $post_ids_by_key;
     /* Statuses a unique key can be resolved against (excludes trash & auto-draft) */
     public $lookup_post_statuses = array('publish', 'draft', 'pending', 'future', 'private');
+    /* Repeater formats handled by export_repeater_meta() & save_repeater_meta() */
+    public $repeater_formats = array('newline', 'columns');
     public function __construct() {
         add_action('init', array(&$this, 'load_translation'));
         add_action('init', array(&$this, 'load_toolbox'));
@@ -367,8 +369,14 @@ class WPUImportExport {
                     unset($post_type_data['columns'][$column_name]);
                     continue;
                 }
+                /* Supported formats only: an unhandled format would wipe existing rows on import */
+                $format = isset($column_data['format']) ? $column_data['format'] : '';
+                if (!in_array($format, $this->repeater_formats, true)) {
+                    unset($post_type_data['columns'][$column_name]);
+                    continue;
+                }
                 $post_type_data['columns'][$column_name]['meta_key'] = isset($column_data['meta_key']) ? $column_data['meta_key'] : $column_name;
-                $post_type_data['columns'][$column_name]['format'] = isset($column_data['format']) ? $column_data['format'] : 'indexed';
+                $post_type_data['columns'][$column_name]['format'] = $format;
                 $post_type_data['columns'][$column_name]['sub_fields'] = array_values($column_data['sub_fields']);
                 if ($post_type_data['columns'][$column_name]['format'] === 'columns') {
                     if (!isset($column_data['max']) || !is_numeric($column_data['max'])) {
@@ -700,18 +708,29 @@ class WPUImportExport {
         return $redirect_to;
     }
 
-    /* Build get_posts() args from the posted export filters */
-    public function get_export_query_args($post_type) {
+    /* Raw export filters for a post type, read from $_POST (unslashed, not yet validated) */
+    public function get_posted_export_filters($post_type) {
+        if (!isset($_POST['filter'][$post_type]) || !is_array($_POST['filter'][$post_type])) {
+            return array();
+        }
+        return wp_unslash($_POST['filter'][$post_type]);
+    }
+
+    /* Build get_posts() args from export filters. $filters defaults to the posted ones */
+    public function get_export_query_args($post_type, $filters = null) {
+        if (!is_array($filters)) {
+            $filters = $this->get_posted_export_filters($post_type);
+        }
         $args = array(
             'post_type' => $post_type,
             'numberposts' => -1,
-            'post_status' => $this->get_export_statuses($post_type),
-            'tax_query' => $this->get_export_tax_query($post_type),
-            'date_query' => $this->get_export_date_query($post_type)
+            'post_status' => $this->get_export_statuses($filters),
+            'tax_query' => $this->get_export_tax_query($post_type, $filters),
+            'date_query' => $this->get_export_date_query($filters)
         );
         /* Always set 'lang' : an empty string neutralizes Polylang's current-language default */
-        $args['lang'] = $this->get_export_lang($post_type);
-        $search = $this->get_export_search($post_type);
+        $args['lang'] = $this->get_export_lang($filters);
+        $search = $this->get_export_search($filters);
         if (!empty($search)) {
             $args['s'] = $search;
         }
@@ -754,9 +773,9 @@ class WPUImportExport {
         return $statuses;
     }
 
-    /* Get sanitized statuses from posted filters, fallback to publish */
-    public function get_export_statuses($post_type) {
-        $posted = isset($_POST['filter'][$post_type]['status']) && is_array($_POST['filter'][$post_type]['status']) ? $_POST['filter'][$post_type]['status'] : array();
+    /* Get sanitized statuses from export filters, fallback to publish */
+    public function get_export_statuses($filters) {
+        $posted = isset($filters['status']) && is_array($filters['status']) ? $filters['status'] : array();
         $valid_statuses = array_keys($this->get_valid_export_statuses());
         $statuses = array();
         foreach ($posted as $status) {
@@ -772,11 +791,10 @@ class WPUImportExport {
         return (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $date);
     }
 
-    /* Build a date_query from posted filters */
-    public function get_export_date_query($post_type) {
-        $posted = isset($_POST['filter'][$post_type]) ? $_POST['filter'][$post_type] : array();
-        $after = isset($posted['date_after']) ? sanitize_text_field($posted['date_after']) : '';
-        $before = isset($posted['date_before']) ? sanitize_text_field($posted['date_before']) : '';
+    /* Build a date_query from export filters */
+    public function get_export_date_query($filters) {
+        $after = isset($filters['date_after']) ? sanitize_text_field($filters['date_after']) : '';
+        $before = isset($filters['date_before']) ? sanitize_text_field($filters['date_before']) : '';
 
         $date_query = array();
         if ($after && $this->is_valid_export_date($after)) {
@@ -791,9 +809,9 @@ class WPUImportExport {
         return empty($date_query) ? array() : array($date_query);
     }
 
-    /* Build the Polylang lang arg from posted filters. Empty string = all languages (neutralizes Polylang's current-language default) */
-    public function get_export_lang($post_type) {
-        $posted = isset($_POST['filter'][$post_type]['lang']) && is_array($_POST['filter'][$post_type]['lang']) ? $_POST['filter'][$post_type]['lang'] : array();
+    /* Build the Polylang lang arg from export filters. Empty string = all languages (neutralizes Polylang's current-language default) */
+    public function get_export_lang($filters) {
+        $posted = isset($filters['lang']) && is_array($filters['lang']) ? $filters['lang'] : array();
         $valid = array_keys($this->get_languages());
         $langs = array();
         foreach ($posted as $lang) {
@@ -804,15 +822,17 @@ class WPUImportExport {
         return implode(',', $langs);
     }
 
-    /* Get sanitized search string from posted filters (WP_Query 's': title, content, excerpt) */
-    public function get_export_search($post_type) {
-        $posted = isset($_POST['filter'][$post_type]['search']) ? sanitize_text_field(wp_unslash($_POST['filter'][$post_type]['search'])) : '';
-        return trim($posted);
+    /* Get sanitized search string from export filters (WP_Query 's': title, content, excerpt) */
+    public function get_export_search($filters) {
+        if (!isset($filters['search']) || !is_string($filters['search'])) {
+            return '';
+        }
+        return trim(sanitize_text_field($filters['search']));
     }
 
-    /* Build a tax_query from posted filters */
-    public function get_export_tax_query($post_type) {
-        $posted = isset($_POST['filter'][$post_type]['tax']) && is_array($_POST['filter'][$post_type]['tax']) ? $_POST['filter'][$post_type]['tax'] : array();
+    /* Build a tax_query from export filters */
+    public function get_export_tax_query($post_type, $filters) {
+        $posted = isset($filters['tax']) && is_array($filters['tax']) ? $filters['tax'] : array();
         $valid_taxonomies = get_object_taxonomies($post_type);
         $tax_query = array('relation' => 'AND');
         foreach ($posted as $taxonomy => $term_ids) {
@@ -1374,6 +1394,10 @@ class WPUImportExport {
     }
 
     public function save_repeater_meta($post_id, $column_data, $value) {
+        /* Never touch stored rows for a format we cannot build: that would delete them */
+        if (!in_array($column_data['format'], $this->repeater_formats, true)) {
+            return;
+        }
         $meta_key = $column_data['meta_key'];
         $sub_fields = $column_data['sub_fields'];
         $rows = array();
