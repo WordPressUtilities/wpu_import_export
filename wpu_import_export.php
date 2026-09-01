@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.14.1
+Version: 0.14.2
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.14.1';
+    private $plugin_version = '0.14.2';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -1263,6 +1263,8 @@ class WPUImportExport {
             if ($value === null) {
                 continue;
             }
+            /* Let the column clean the raw blob before it is split into rows */
+            $value = $this->validate_meta_value($value, $column_data);
             $this->save_repeater_meta($post_id, $column_data, $value);
         }
 
