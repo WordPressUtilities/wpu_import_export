@@ -4,7 +4,7 @@ Plugin Name: WPU Import Export
 Plugin URI: https://github.com/WordPressUtilities/wpu_import_export
 Update URI: https://github.com/WordPressUtilities/wpu_import_export
 Description: Simple import export
-Version: 0.14.2
+Version: 0.14.3
 Author: Darklg
 Author URI: https://darklg.me/
 Text Domain: wpu_import_export
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 class WPUImportExport {
-    private $plugin_version = '0.14.2';
+    private $plugin_version = '0.14.3';
     private $plugin_settings = array(
         'id' => 'wpu_import_export',
         'name' => 'WPU Import Export'
@@ -1070,15 +1070,11 @@ class WPUImportExport {
             return new WP_Error('invalid_file_type', __('Invalid file type, please upload a CSV file', 'wpu_import_export'));
         }
 
-        /* Get file content through WP_Filesystem */
-        if (!function_exists('WP_Filesystem')) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-        }
-        global $wp_filesystem;
-        if (!WP_Filesystem() || !$wp_filesystem) {
+        /* Local read only, no WP_Filesystem credentials needed */
+        if (!is_file($file_path) || !is_readable($file_path)) {
             return new WP_Error('filesystem_error', __('Unable to access the filesystem', 'wpu_import_export'));
         }
-        $file_content = $wp_filesystem->get_contents($file_path);
+        $file_content = file_get_contents($file_path);
         if (!$file_content) {
             return new WP_Error('invalid_file_content', __('Invalid file content', 'wpu_import_export'));
         }
